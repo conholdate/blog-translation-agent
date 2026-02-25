@@ -480,8 +480,11 @@ class ContentTranslatorAgent:
             if attempt == 0:
                 # First attempt - normal prompt
                 prompt = f"""Translate the provided markdown content to {self.config.language_names.get(target_lang, "")} language having code '{target_lang}'.
-
+                
+                CRITICAL_RULES to follow:
                 {CRITICAL_RULES}
+
+                YOU ONLY HAVE TO TRANSLATE THE BELOW CONTENT COMPLETELY. Do not return the original text.
 
                 Below is the Markdown content to translate:
                 {chunk}"""
@@ -496,9 +499,10 @@ class ContentTranslatorAgent:
 
                     Translate the provided markdown content to {self.config.language_names.get(target_lang, "")} language with code '{target_lang}'. You MUST translate it completely.
 
+                    CRITICAL_RULES to follow:
                     {CRITICAL_RULES}
 
-                    YOU MUST TRANSLATE THE BELOW CONTENT COMPLETELY. Do not return the original text.
+                    YOU ONLY HAVE TO TRANSLATE THE BELOW CONTENT COMPLETELY. Do not return the original text.
 
                     Below is the Markdown content to translate:
                     {chunk}
