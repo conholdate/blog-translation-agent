@@ -120,7 +120,7 @@ on:
         description: "Limit Number of Posts to Translate (Optional)"
         required: false
         type: number
-        default: "ALL"   # 0 or blank means no limit
+        default: "3"   # 0 or blank means no limit
 
 jobs:
   translate-blog-posts:
