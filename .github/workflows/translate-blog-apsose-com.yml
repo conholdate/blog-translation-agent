@@ -2,7 +2,7 @@ name: Auto Translate - blog.aspose.com
 
 on:
   schedule:
-    - cron: "*/10 * * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
+    - cron: "0 2 * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
 
   workflow_dispatch:
     inputs:
@@ -273,7 +273,7 @@ jobs:
           echo "IN_LIMIT: $IN_LIMIT"
 
           # Run the python script safely
-          # python tools/translation_agent/translator.py "${args[@]}"
+          python tools/translation_agent/tra?nslator.py "${args[@]}"
 
       #############################################################
       # 5. COMMIT CHANGES BACK TO TARGET REPO
