@@ -273,7 +273,7 @@ jobs:
           echo "IN_LIMIT: $IN_LIMIT"
 
           # Run the python script safely
-          python tools/translation_agent/tra?nslator.py "${args[@]}"
+          python tools/translation_agent/translator.py "${args[@]}"
 
       #############################################################
       # 5. COMMIT CHANGES BACK TO TARGET REPO
