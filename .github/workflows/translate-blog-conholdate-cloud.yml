@@ -1,0 +1,365 @@
+name: Auto Translate - blog.conholdate.cloud
+
+on:
+  schedule:
+    - cron: "0 1 * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
+    # - cron: "0/10 * * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
+
+  workflow_dispatch:
+    inputs:
+      domain:
+        description: "Select Domain"
+        required: true
+        type: choice
+        default: blog.conholdate.cloud
+        options:
+          - blog.aspose.com
+          - blog.groupdocs.com
+          - blog.conholdate.com
+          - blog.aspose.cloud
+          - blog.groupdocs.cloud
+          - blog.conholdate.cloud
+
+      product:
+        description: "Select Product (Optional)"
+        required: false
+        type: choice
+        default: "ALL"
+        options:
+          # Aspose
+          - "ALL"   # empty → optional
+          - Aspose.3D
+          - Aspose.BarCode
+          - Aspose.CAD
+          - Aspose.Cells
+          - Aspose.Diagram
+          - Aspose.Drawing
+          - Aspose.Email
+          - Aspose.Finance
+          - Aspose.Font
+          - Aspose.GIS
+          - Aspose.HTML
+          - Aspose.Imaging
+          - Aspose.Note
+          - Aspose.OCR
+          - Aspose.OMR
+          - Aspose.Page
+          - Aspose.PDF
+          - Aspose.PSD
+          - Aspose.PUB
+          - Aspose.Slides
+          - Aspose.SVG
+          - Aspose.Tasks
+          - Aspose.Tex
+          - Aspose.Total
+          - Aspose.Words
+          - Aspose.ZIP
+          - Aspose.Medical
+
+          # Aspose Cloud
+          - Aspose.3D Cloud
+          - Aspose.BarCode Cloud
+          - Aspose.CAD Cloud
+          - Aspose.Cells Cloud
+          - Aspose.Diagram Cloud
+          - Aspose.Email Cloud
+          - Aspose.HTML Cloud
+          - Aspose.Imaging Cloud
+          - Aspose.OCR Cloud
+          - Aspose.OMR Cloud
+          - Aspose.PDF Cloud
+          - Aspose.Slides Cloud
+          - Aspose.Tasks Cloud
+          - Aspose.Total Cloud
+          - Aspose.Words Cloud
+
+          # GroupDocs
+          - GroupDocs.Annotation
+          - GroupDocs.Assembly
+          - GroupDocs.Classification
+          - GroupDocs.Comparison
+          - GroupDocs.Conversion
+          - GroupDocs.Editor
+          - GroupDocs.Markdown
+          - GroupDocs.Merger
+          - GroupDocs.Metadata
+          - GroupDocs.Parser
+          - GroupDocs.Redaction
+          - GroupDocs.Search
+          - GroupDocs.Signature
+          - GroupDocs.Total
+          - GroupDocs.Viewer
+          - GroupDocs.Watermark
+
+          # GroupDocs Cloud
+          - GroupDocs.Annotation Cloud
+          - GroupDocs.Assembly Cloud
+          - GroupDocs.Classification Cloud
+          - GroupDocs.Comparison Cloud
+          - GroupDocs.Conversion Cloud
+          - GroupDocs.Editor Cloud
+          - GroupDocs.Merger Cloud
+          - GroupDocs.Metadata Cloud
+          - GroupDocs.Parser Cloud
+          - GroupDocs.Rewriter Cloud
+          - GroupDocs.Signature Cloud
+          - GroupDocs.Total Cloud
+          - GroupDocs.Translation Cloud
+          - GroupDocs.Viewer Cloud
+          - GroupDocs.Watermark Cloud
+
+          # Conholdate
+          - Conholdate.Total
+
+          # Conholdate Cloud
+          - Conholdate.Total Cloud
+
+      author:
+        description: "Author Name (Optional)"
+        required: false
+        type: string
+        default: "ALL"   # empty → optional
+
+      limit:
+        description: "Limit Number of Posts to Translate (Optional)"
+        required: false
+        type: number
+        default: "2"   # 0 or blank means no limit
+
+jobs:
+  translate-blog-posts:
+    runs-on: ubuntu-latest
+
+    steps:
+      #############################################################
+      # 0. CHECKOUT THIS REPO (blog-translation-tools)
+      #############################################################
+      - name: Checkout blog-translation-tools
+        uses: actions/checkout@v4
+
+      #############################################################
+      # 1. CHECKOUT TARGET REPO (blog.groupdocs.com)
+      #############################################################
+      - name: Set Repository based on Domain
+        id: maprepo
+        run: |
+
+          # 1. Determine domain (uses manual input OR defaults to aspose for cron)
+          DOMAIN_VAL="${{ inputs.domain || 'blog.conholdate.cloud' }}"
+          
+          # 2. Save it to the environment so the NEXT steps can see it
+          echo "DOMAIN=$DOMAIN_VAL" >> $GITHUB_ENV
+
+          DEFAULT_BRANCH_NAME="master"
+
+          if [ "$DOMAIN_VAL" = "blog.aspose.com" ]; then
+            echo "REPO=aspose/aspose-blog" >> $GITHUB_ENV
+            DEFAULT_BRANCH_NAME="master"
+
+
+          elif [ "$DOMAIN_VAL" = "blog.groupdocs.com" ]; then
+            echo "REPO=groupdocs/groupdocs-blog" >> $GITHUB_ENV
+            DEFAULT_BRANCH_NAME="master"
+
+          elif [ "$DOMAIN_VAL" = "blog.conholdate.com" ]; then
+            echo "REPO=conholdate/conholdate-blog" >> $GITHUB_ENV
+            DEFAULT_BRANCH_NAME="main"
+          
+          elif [ "$DOMAIN_VAL" = "blog.aspose.cloud" ]; then
+            echo "REPO=aspose-cloud/aspose-cloud-blog" >> $GITHUB_ENV
+            DEFAULT_BRANCH_NAME="master"
+
+          elif [ "$DOMAIN_VAL" = "blog.groupdocs.cloud" ]; then
+            echo "REPO=groupdocs-cloud/groupdocs-cloud-blog" >> $GITHUB_ENV
+            DEFAULT_BRANCH_NAME="master"
+          
+          elif [ "$DOMAIN_VAL" = "blog.conholdate.cloud" ]; then
+            echo "REPO=conholdate-cloud/blog.conholdate.cloud" >> $GITHUB_ENV
+            DEFAULT_BRANCH_NAME="main"
+
+          else
+            echo "Unknown domain: $$DOMAIN_VAL"; exit 1
+          fi
+
+          echo "REPO_PATH=blog-checkedout-repo" >> $GITHUB_ENV
+          echo "DEFAULT_BRANCH=$DEFAULT_BRANCH_NAME" >> $GITHUB_ENV
+
+          echo "Selected repository: $REPO"
+          echo "Checkout directory: $REPO_PATH"
+
+
+      - name: Checkout Selected Blogs REPO
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.REPO }}
+          token: ${{ secrets.PAT_GITHUB_SK }}
+          path: ${{ env.REPO_PATH }}
+          fetch-depth: 0
+
+      #############################################################
+      # 2. SETUP PYTHON
+      #############################################################
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.13"
+
+      #############################################################
+      # 3. Create Virtual Environment and Install Python Dependencies
+      #############################################################
+      - name: Create VENV and Print all environment variables
+        run: env
+      
+      - name: Create virtual environment
+        run: python -m venv .venv
+      
+      - name: Activate venv and install dependencies
+        run: |
+          echo ==============================
+          source .venv/bin/activate
+          echo Workspace: $GITHUB_WORKSPACE
+          echo ==============================
+          echo "GitHub workspace: ${{ github.workspace }}"
+          # ls -R .
+          echo ==============================
+          pip install --upgrade pip
+          pip install -r tools/translation_agent/requirements.txt
+          echo ==============================
+
+      #############################################################
+      # 4. RUN TRANSLATION AGENT
+      #############################################################
+      - name: Run Translator Agent
+        env:
+          TARGET_REPO: blog-checkedout-com/content/
+          GOOGLE_CREDENTIALS_JSON_SK: ${{secrets.GOOGLE_CREDENTIALS_JSON_SK}}
+          PROFESSIONALIZE_API_KEY: ${{ secrets.PROFESSIONALIZE_API_KEY }}
+
+        run: |
+          source .venv/bin/activate
+          
+          # 1. Map inputs to local variables with your requested defaults
+          # If inputs are empty (Cron run), these fallbacks are used.
+          IN_PRODUCT="${{ inputs.product || 'ALL' }}"
+          IN_AUTHOR="${{ inputs.author || 'ALL' }}"
+          IN_LIMIT="${{ inputs.limit || '2' }}"
+
+          # ============= Build arguments dynamically =============
+          
+          args=()
+          # Domain (always required)
+          args+=("--domain" "$DOMAIN")
+
+          # # Key
+          # args+=("--key" "${{ secrets.PROFESSIONALIZE_API_KEY }}")
+
+          # Product
+          if [[ -n "$IN_PRODUCT" && "$IN_PRODUCT" != "ALL" ]]; then
+            args+=("--product" "$IN_PRODUCT")
+          fi
+
+          # Author (skip if empty or ALL)
+          if [[ -n "$IN_AUTHOR" && "$IN_AUTHOR" != "ALL" ]]; then
+            args+=("--author" "$IN_AUTHOR")
+          fi
+
+          # Limit
+          if [[ -n "$IN_LIMIT" && "$IN_LIMIT" != "ALL" ]]; then
+            args+=("--limit" "$IN_LIMIT")
+          fi
+
+          echo "DOMAIN: $DOMAIN"
+          echo "IN_PRODUCT: $IN_PRODUCT"
+          echo "IN_AUTHOR: $IN_AUTHOR"
+          echo "IN_LIMIT: $IN_LIMIT"
+
+          # Run the python script safely
+          python tools/translation_agent/translator.py "${args[@]}"
+
+      #############################################################
+      # 5. COMMIT CHANGES BACK TO TARGET REPO
+      #############################################################
+      # - name: Commit & Push translation files
+      #   uses: stefanzweifel/git-auto-commit-action@v5
+      #   with:
+      #     commit_message: "Auto: Add missing translation files"
+      #     branch: main
+      #     repository: blog-groupdocs-com
+      #     commit_user_name: "GitHub Actions Bot"
+      #     commit_user_email: "actions@github.com"
+      #     token: ${{ secrets.GH_PAT }}
+
+      #############################################################
+      # 5. COMMIT CHANGES BACK TO TARGET REPO & CREATE PR
+      #############################################################
+      
+      # 5.1 Commit the newly created files
+      - name: Prepare Git for Commit
+        id: prep
+        if: success()
+        env:
+          GIT_COMMITTER_NAME: "Blogs Translation Agent"
+          GIT_COMMITTER_EMAIL: "actions@github.com" 
+          GIT_AUTHOR_NAME: "Blogs Translation Agent"
+          GIT_AUTHOR_EMAIL: "blogs-translation-agent@aspose.com"
+        run: |
+          # Move into the checked-out directory
+          cd ${{ env.REPO_PATH }}
+          
+          # Configure Git user for the commit (This is the only necessary manual config)
+          git config --global user.name "GitHub Actions Bot"
+          git config --global user.email "actions@github.com"
+          
+          # Add all new or modified translation files to the staging area
+          # The action will commit these changes later.
+          git add content/
+          
+          # Check if there are any staged changes to commit
+          if [ -z "$(git diff --cached --name-only)" ]; then
+            echo "No translation changes detected. Skipping COMMIT, PR or PUSH."
+            exit 0
+          fi
+
+          # --- Commit ---
+          echo "Committing changes..."
+          git commit -m "Daily Blogs Translation: $DOMAIN"
+
+          # --- Push ---
+          REPO_SLUG="${{ env.REPO }}" # e.g., groupdocs/groupdocs-blog
+          PAT_TOKEN="${{ secrets.PAT_GITHUB_SK }}"
+          PUSH_BRANCH="${{ env.DEFAULT_BRANCH }}"
+          
+          echo "Pushing changes to branch: $PUSH_BRANCH on $REPO_SLUG"
+          
+          # Push using the PAT for authentication
+          git push https://${PAT_TOKEN}@github.com/${REPO_SLUG}.git HEAD:$PUSH_BRANCH
+          
+          echo "✅ Successfully pushed changes to $REPO_SLUG/$PUSH_BRANCH"          
+
+      # ===========================================================
+      # # 5.2 Create the Pull Request using Peter Evans' Action
+      # ===========================================================
+      # - name: Create Pull Request
+      #   if: env.COMMITTED_CHANGES == 'true'
+      #   uses: peter-evans/create-pull-request@v6
+      #   with:
+      #     token: ${{ secrets.PAT_GITHUB_SK }} 
+          
+      #     # The path must be set to the checked out repository directory
+      #     path: ${{ env.REPO_PATH }} 
+          
+      #     # The branch name the action will create and push
+      #     branch: blogteam/translation-detection-${{ github.run_id }} 
+          
+      #     # The base branch (where the changes will be merged into)
+      #     base: main 
+          
+      #     # The commit message uses the staged changes from the previous step
+      #     commit-message: "Auto: Add missing translation files for ${{ inputs.domain }}"
+      #     title: "🤖 Missing Translations for ${{ inputs.domain }}"
+      #     body: |
+      #       Automatically generated PR containing missing translation files.
+            
+      #       * Triggered by: **${{ github.actor }}**
+      #       * Domain: **${{ inputs.domain }}**
+      #       * Run URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
