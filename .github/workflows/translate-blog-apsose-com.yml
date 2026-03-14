@@ -2,8 +2,8 @@ name: Auto Translate - blog.aspose.com
 
 on:
   schedule:
-    # - cron: "0 2 * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
-    - cron: "0/10 * * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
+    - cron: "0 1 * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
+    # - cron: "0/10 * * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
 
   workflow_dispatch:
     inputs:
