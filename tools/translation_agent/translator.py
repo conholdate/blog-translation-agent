@@ -7,9 +7,9 @@ import yaml
 import re
 import sys
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from openai import OpenAI
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from io_google_spreadsheet import read_from_google_spreadsheet
 import json
 import argparse
@@ -22,8 +22,61 @@ import os
 from utils import send_metrics
 from config import Stats
 
+
 # ============================================================================
-def call_openai(client: OpenAI, system_prompt: str, user_prompt: str, temperature: float = 0.3, max_tokens: int = None, model: str = config.PROFESSIONALIZE_LLM_MODEL) -> str:
+# TOKEN TRACKING DATACLASSES
+# ============================================================================
+
+@dataclass
+class TokenUsage:
+    """Token usage from a single LLM call"""
+    prompt_tokens: int
+    completion_tokens: int
+    total_tokens: int
+    model: str
+
+
+@dataclass
+class TokenTracker:
+    """Accumulates token usage across multiple LLM calls"""
+    total_prompt_tokens: int = 0
+    total_completion_tokens: int = 0
+    total_tokens: int = 0
+    total_calls: int = 0
+    calls: List[Dict] = field(default_factory=list)
+
+    def record(self, usage: TokenUsage, call_purpose: str = "") -> None:
+        """Record token usage from a single LLM call"""
+        self.total_prompt_tokens += usage.prompt_tokens
+        self.total_completion_tokens += usage.completion_tokens
+        self.total_tokens += usage.total_tokens
+        self.total_calls += 1
+        self.calls.append({
+            "purpose": call_purpose,
+            "prompt_tokens": usage.prompt_tokens,
+            "completion_tokens": usage.completion_tokens,
+            "total_tokens": usage.total_tokens,
+            "model": usage.model,
+        })
+
+    def reset(self) -> None:
+        """Reset all counters (use between posts)"""
+        self.total_prompt_tokens = 0
+        self.total_completion_tokens = 0
+        self.total_tokens = 0
+        self.total_calls = 0
+        self.calls = []
+
+    def summary(self) -> str:
+        return (
+            f"📊 Token Usage: {self.total_prompt_tokens} prompt + "
+            f"{self.total_completion_tokens} completion = "
+            f"{self.total_tokens} total tokens across {self.total_calls} LLM calls"
+        )
+
+
+# ============================================================================
+def call_openai(client: OpenAI, system_prompt: str, user_prompt: str, temperature: float = 0.3, max_tokens: int = None, model: str = config.PROFESSIONALIZE_LLM_MODEL) -> Tuple[str, TokenUsage]:
     """
     Unified function to call OpenAI API with customizable prompts and parameters.
 
@@ -36,7 +89,7 @@ def call_openai(client: OpenAI, system_prompt: str, user_prompt: str, temperatur
         model: Model to use (default "recommended")
 
     Returns:
-        Stripped response content from OpenAI
+        Tuple of (stripped response content, TokenUsage)
     """
     messages = [
         {"role": "system", "content": system_prompt},
@@ -50,8 +103,19 @@ def call_openai(client: OpenAI, system_prompt: str, user_prompt: str, temperatur
     response = client.chat.completions.create(**kwargs)
     # print(f"   🤖 OpenAI Response:\n{response}")
 
-    return (response.choices[0].message.content or "").strip()
-    # return response.choices[0].message.content.strip()
+    usage = TokenUsage(
+        prompt_tokens=response.usage.prompt_tokens if response.usage else 0,
+        completion_tokens=response.usage.completion_tokens if response.usage else 0,
+        total_tokens=response.usage.total_tokens if response.usage else 0,
+        model=response.model,
+    )
+    print("="*40)
+    print(f"== ⚠️ ==	prompt_tokens	completion_tokens	total_tokens	model	{usage.prompt_tokens}	{usage.completion_tokens}	{usage.total_tokens}	{usage.model}")
+    print("="*40)
+
+
+    text = (response.choices[0].message.content or "").strip()
+    return text, usage
 
 @dataclass
 class TranslationConfig:
@@ -238,6 +302,7 @@ class FrontmatterTranslatorAgent:
         self.client = client
         self.config = config
         self.name = "FrontmatterTranslator"
+        self.token_tracker: Optional[TokenTracker] = None
     
     def get_nested_value(self, data: Dict, key_path: str) -> Any:
         """Get value from nested dictionary using dot notation"""
@@ -350,12 +415,14 @@ class FrontmatterTranslatorAgent:
         # print(f"\n📋 Frontmatter Translating: ({text})...")
         # ============================================================================
 
-        translated = call_openai(
+        translated, usage = call_openai(
             self.client,
             "You are a professional technical translator specializing in software documentation. You NEVER translate product names like Aspose, GroupDocs, or Conholdate products.",
             prompt,
             temperature=0.3
         )
+        if self.token_tracker:
+            self.token_tracker.record(usage, "frontmatter_translate")
         # print(f"📋 Frontmatter Translated: ({translated})...")
         # print(f"{'='*60}")
 
@@ -369,6 +436,7 @@ class ContentTranslatorAgent:
         self.client = client
         self.config = config
         self.name = "ContentTranslator"
+        self.token_tracker: Optional[TokenTracker] = None
     
     def translate(self, domain:str, content: str, target_lang: str) -> str:
         """
@@ -511,12 +579,14 @@ class ContentTranslatorAgent:
 
                 print(f"Retrying Translation for:\n{chunk}")
 
-            translated_chunk = call_openai(
+            translated_chunk, usage = call_openai(
                 self.client,
                 "You are a professional technical translator specializing in markdown documentation. You NEVER translate product names like Aspose, GroupDocs, or Conholdate products. You preserve all code, URLs, and technical references exactly as they are.",
                 prompt,
                 temperature=0.3
             )
+            if self.token_tracker:
+                self.token_tracker.record(usage, "content_translate")
 
 
             # Check if translation was successful
@@ -627,13 +697,15 @@ class ContentTranslatorAgent:
         print(f"   🤖 Analyzing translation validity with AI...")
         # print(f"   🤖 Prompt: {analysis_prompt}")
         try:
-            response = call_openai(
+            response, usage = call_openai(
                 self.client,
                 "You are an expert translation quality analyst specializing in technical documentation and code.",
                 analysis_prompt,
                 temperature=0.1,  # Low temperature for consistent analysis
                 # max_tokens=10     # Very short response needed
             )
+            if self.token_tracker:
+                self.token_tracker.record(usage, "translation_validity_check")
             # print(f"   🤖 AI Analysis Response: {response}")
 
             result = response.strip().upper()
@@ -674,6 +746,7 @@ class PlatformIdentifierAgent:
         self.client = client
         self.config = config
         self.name = "PlatformIdentifier"
+        self.token_tracker: Optional[TokenTracker] = None
 
     def identify_platform(self, content: str) -> str:
         """
@@ -706,12 +779,14 @@ Blog post content:
 """
 
         try:
-            identified_platform = call_openai(
+            identified_platform, usage = call_openai(
                 self.client,
                 "You are an expert at identifying software platforms and technologies from technical content.",
                 prompt,
                 temperature=0.1  # Low temperature for consistent classification
             )
+            if self.token_tracker:
+                self.token_tracker.record(usage, "platform_identify")
             return identified_platform.strip()
         except Exception as e:
             print(f"   ❌ Error identifying platform: {e}")
@@ -734,10 +809,18 @@ class TranslationOrchestrator:
         )
         self.config = TranslationConfig()
 
-        # Initialize specialized agents
+        # Shared token tracker (reset per post inside translate_files)
+        self.token_tracker = TokenTracker()
+
+        # Initialize specialized agents and wire up the shared tracker
         self.frontmatter_agent = FrontmatterTranslatorAgent(self.client, self.config)
+        self.frontmatter_agent.token_tracker = self.token_tracker
+
         self.content_agent = ContentTranslatorAgent(self.client, self.config)
+        self.content_agent.token_tracker = self.token_tracker
+
         self.platform_agent = PlatformIdentifierAgent(self.client, self.config)
+        self.platform_agent.token_tracker = self.token_tracker
     
     # ============================================================================
     # TRANSLATE ALL FILES IN ALL MISSING LANGUAGES
@@ -755,6 +838,9 @@ class TranslationOrchestrator:
         print(f"   Translating {len(posts_list_to_translate)} Items")
 
         for item in posts_list_to_translate:
+
+            # Reset token tracker for each post so metrics are per-post
+            self.token_tracker.reset()
  
             start_time = time.time()
             status = "success"
@@ -851,11 +937,13 @@ class TranslationOrchestrator:
                 if items_failed > 0:
                     failure_list = [item for item in discovery_list if item not in success_list]
 
+                # Print and capture token usage summary for this post
+                print(f"\n{self.token_tracker.summary()}")
 
-                send_metrics(    run_id, 
-                        status, 
-                        run_duration_ms, 
-                        agent_name          = config.AGENT_BLOG_POST_TRANSLATOR, 
+                send_metrics(    run_id,
+                        status,
+                        run_duration_ms,
+                        agent_name          = config.AGENT_BLOG_POST_TRANSLATOR,
                         job_type            = config.JOB_TYPE_TRANSLATION,
                         item_name           = config.JOB_ITEM_TRANSLATIONS_ADDED,
                         items_discovered    = items_discovered,
@@ -863,7 +951,7 @@ class TranslationOrchestrator:
                         items_succeeded     = items_succeeded,
                         items_skipped       = items_skipped,
                         product             = config.PRODUCT_MAP[currentDomain][product] if product else config.NOT_APPLICABLE,
-                        platform            = identified_platform,  
+                        platform            = identified_platform,
                         website             = domain.replace("blog.", ""),
                         post_dir            = slug,
                         post_url            = post_url,
@@ -871,7 +959,11 @@ class TranslationOrchestrator:
                         discovered_items    = ", ".join(discovery_list),
                         failed_items        = ", ".join(failure_list),
                         succeeded_items     = ", ".join(success_list),
-                        skipped_items       = ", ".join(skipped_list)
+                        skipped_items       = ", ".join(skipped_list),
+                        # llm_prompt_tokens       = self.token_tracker.total_prompt_tokens,
+                        # llm_completion_tokens   = self.token_tracker.total_completion_tokens,
+                        llm_total_tokens        = self.token_tracker.total_tokens,
+                        llm_call_count          = self.token_tracker.total_calls,
                     )
             
             except Exception as e:
@@ -1144,3 +1236,4 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
 if __name__ == "__main__":
     print("⚠️  Main Called ⚠️")
     start_translation(sys.argv[1:])
+
