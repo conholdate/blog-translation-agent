@@ -539,6 +539,8 @@ class ContentTranslatorAgent:
                 8. Keep technical terms accurate
                 9. Provide ONLY the translated markdown, no explanations or preamble is needed.
                 10. If the provided content seems empty or just contain markdown formatting, return the content as it is.
+                11. Ensure the translated content should not result in any markdown parsing errors.
+                12. If the values of attributes in shortcodes contain double quotes (") then escape the internal quotes using (\\")
         """
 
 
