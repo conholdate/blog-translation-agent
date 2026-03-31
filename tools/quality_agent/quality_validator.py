@@ -254,7 +254,7 @@ def _sort_sheet_by_error_pct(ws: gspread.Worksheet) -> None:
         if not data:
             return
 
-        data.sort(key=lambda r: _pct_to_float(r[COL_ERROR_HEURISTIC - 1] if len(r) >= COL_ERROR_HEURISTIC else ""), reverse=True)
+        data.sort(key=lambda r: _pct_to_float(r[COL_ERROR_AI - 1] if len(r) >= COL_ERROR_AI else ""), reverse=True)
 
         last_col_letter = chr(ord('A') + COL_TRANSLATED_URL - 1)
         last_row = DATA_ROW_OFFSET + len(data) - 1
@@ -307,7 +307,7 @@ Review it and:
 1. Count the total number of words in the TEXT (excluding code blocks, URLs, tags, categories, author names, abbreviations and file formats like HTML/REST/PDF, and brand/product names like Aspose.PDF/GroupDocs.Conversion/Conholdate.Total).
    Then count how many of those words are still in English and were NOT translated.
    Calculate: SCORE = (untranslated_words / total_words) * 100, rounded to nearest integer.
-2. List the specific sentences or phrases (up to 5, one per line) that were NOT translated.
+2. List the specific sentences or phrases (up to 5, one per line, one first 100 chars of each sentence) that were NOT translated.
 
 Content sample:
 {sampled_text}
