@@ -304,8 +304,10 @@ def _ai_error_pct(original_file: Path, translated_file: Path, lang: str) -> tupl
 
     prompt = f"""The following content was translated into {lang_name} (code: {lang}).
 Review it and:
-1. Estimate what percentage of the TEXT (excluding code blocks, URLs, tags, categories, author names, and brand/product names like Aspose.PDF/GroupDocs.Conversion/Conholdate.Total) appears to still be in English and was NOT translated.
-2. List the specific text snippets (up to 5, one per line) that were NOT translated.
+1. Count the total number of words in the TEXT (excluding code blocks, URLs, tags, categories, author names, abbreviations and file formats like HTML/REST/PDF, and brand/product names like Aspose.PDF/GroupDocs.Conversion/Conholdate.Total).
+   Then count how many of those words are still in English and were NOT translated.
+   Calculate: SCORE = (untranslated_words / total_words) * 100, rounded to nearest integer.
+2. List the specific sentences or phrases (up to 5, one per line) that were NOT translated.
 
 Content sample:
 {sampled_text}
