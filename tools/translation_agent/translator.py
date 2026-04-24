@@ -1113,6 +1113,33 @@ def build_parser():
     return parser
 
 # ============================================================================
+# ROW VALIDATION HELPER
+# ============================================================================
+
+def filter_valid_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
+    """
+    Return only rows that contain the required fields for translation:
+      col 0 — domain
+      col 1 — product
+      col 2 — slug
+      col 6 — missing languages
+
+    Filters out sentinel rows (e.g. '!!! NO MISSING TRANSLATION FOUND !!!'),
+    blank rows, and any row with fewer than 7 columns.
+    """
+    if not posts_list:
+        return posts_list
+    return [
+        row for row in posts_list
+        if len(row) > 6
+        and str(row[0]).strip()  # domain
+        and str(row[1]).strip()  # product
+        and str(row[2]).strip()  # slug
+        and str(row[6]).strip()  # missing langs
+    ]
+
+
+# ============================================================================
 # MAIN FUNCTION TO START TRANSLATION BASED ON ARGS
 # ============================================================================
 
@@ -1161,6 +1188,16 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
                 posts_list = read_from_google_spreadsheet(config.SHEET_ID_TEST_QA)
                 
 
+
+        # Keep only rows that have the required fields: domain, product, slug, and missing langs
+        if posts_list:
+            posts_list = filter_valid_rows(posts_list)
+
+        if not posts_list:
+            print("="*60)
+            print(f"No missing translations found for domain: {currentDomain} — nothing to do.")
+            print("="*60)
+            return
 
         # PRINTING POSTS LIST ==========================
         if posts_list is not None:
