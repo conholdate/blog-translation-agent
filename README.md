@@ -51,6 +51,36 @@ blog-translation-agent/
 
 ---
 
+## Environment Variables
+
+The following environment variables are required. In GitHub Actions they are stored as repository secrets.
+
+| Variable | Required By | Description |
+|----------|-------------|-------------|
+| `PROFESSIONALIZE_API_KEY` | Translation Agent, Quality Agent | API key for the LLM translation service |
+| `GOOGLE_CREDENTIALS_JSON_SK` | Both agents | Google service account JSON for Sheets access |
+| `PAT_GITHUB_SK` | CI workflows | GitHub Personal Access Token — used to push translated content to target blog repos |
+
+For local development, create a `.env` file in `tools/translation_agent/` with `PROFESSIONALIZE_API_KEY=<your-key>`.
+
+---
+
+## CI Workflows
+
+All workflows live in `.github/workflows/`. They run on a daily cron schedule and can also be triggered manually via `workflow_dispatch`.
+
+| Workflow file | Domain | Schedule (UTC) | What it does |
+|---------------|--------|----------------|--------------|
+| `scan-missing-translations.yml` | All 6 domains | 00:00 daily | Scans all blog repos for missing translations and writes results to Google Sheets |
+| `translate-blog-aspose-com.yml` | blog.aspose.com | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
+| `translate-blog-aspose-cloud.yml` | blog.aspose.cloud | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
+| `translate-blog-groupdocs-com.yml` | blog.groupdocs.com | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
+| `translate-blog-groupdocs-cloud.yml` | blog.groupdocs.cloud | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
+| `translate-blog-conholdate-com.yml` | blog.conholdate.com | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
+| `translate-blog-conholdate-cloud.yml` | blog.conholdate.cloud | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
+
+---
+
 ## 📊 Spreadsheets
 
 ### Missing Translation — Daily Scanning Results
