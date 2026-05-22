@@ -68,13 +68,13 @@ class TestLLMConfig:
 # ============================================================================
 
 class TestMetricsConfig:
-    def test_metrics_url_dev_nonempty(self):
-        assert isinstance(config.METRICS_URL_DEV, str)
-        assert config.METRICS_URL_DEV.startswith("http")
+    def test_metrics_webhook_url_team_nonempty(self):
+        assert isinstance(config.METRICS_WEBHOOK_URL_TEAM, str)
+        assert config.METRICS_WEBHOOK_URL_TEAM.startswith("http")
 
-    def test_metrics_token_dev_nonempty(self):
-        assert isinstance(config.METRICS_TOKEN_DEV, str)
-        assert config.METRICS_TOKEN_DEV.strip() != ""
+    def test_metrics_token_team_nonempty(self):
+        assert isinstance(config.METRICS_TOKEN_TEAM, str)
+        assert config.METRICS_TOKEN_TEAM.strip() != ""
 
 
 # ============================================================================

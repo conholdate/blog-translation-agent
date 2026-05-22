@@ -60,23 +60,35 @@ pip install -r tools/translation_agent/requirements.txt
 
 ## 🔧 Configuration
 
-### Environment Variables
-
-Create a `.env` file or set these environment variables:
+Create a `.env` file in `tools/translation_agent/` with the following variables. In GitHub Actions these are stored as repository secrets.
 
 ```bash
-# Required for scanning
-GOOGLE_CREDENTIALS_JSON_SK=<your-google-credentials-json>
+# LLM translation service
+PROFESSIONALIZE_API_KEY=
+PROFESSIONALIZE_BASE_URL=
+PROFESSIONALIZE_LLM_MODEL=
 
-# Required for translation
-PROFESSIONALIZE_LLM_API_KEY=<your-api-key>
+# Google Sheets service account (full JSON, minified to one line)
+GOOGLE_CREDENTIALS_JSON_SK=
 
+# Metrics webhooks
+METRICS_WEBHOOK_URL_PROD=
+METRICS_TOKEN_PROD=
+METRICS_WEBHOOK_URL_TEAM=
+METRICS_TOKEN_TEAM=
+
+# Scanning sheet IDs
+TRANSLATION_SCAN_SHEET_ID_ASPOSE_COM=
+TRANSLATION_SCAN_SHEET_ID_ASPOSE_CLOUD=
+TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_COM=
+TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_CLOUD=
+TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_COM=
+TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_CLOUD=
+TRANSLATION_SCAN_SHEET_ID_SUMMARY=
+TRANSLATION_SCAN_SHEET_ID_TEST_QA=
 ```
 
-### Config Files
-
-- `config.py` - Domain configurations, language mappings, author handles
-- `requirements.txt` - Python dependencies
+`config.py` loads this file automatically via `python-dotenv` — no manual export needed for local runs.
 
 ---
 

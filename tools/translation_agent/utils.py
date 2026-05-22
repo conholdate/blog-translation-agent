@@ -61,7 +61,7 @@ def send_metrics(   run_id,
     # Send metrics when in PRODUCTION and Agent is not the BLOG SCANNER (to avoid skewing translation metrics with scans)
     if config.PRODUCTION_ENV and agent_name != config.AGENT_BLOG_SCANNER:
         try:
-            response = requests.post(f"{config.METRICS_URL}?token={config.METRICS_TOKEN}", json=payload, headers={"Content-Type": "application/json"})
+            response = requests.post(f"{config.METRICS_WEBHOOK_URL_PROD}?token={config.METRICS_TOKEN_PROD}", json=payload, headers={"Content-Type": "application/json"})
             if response.status_code == 200:
                 print("✅ Metrics sent successfully")
             else:
@@ -73,7 +73,7 @@ def send_metrics(   run_id,
         payload["run_env"] = "PROD" if config.PRODUCTION_ENV else "DEV"
         print(f"PAYLOAD:\n{payload}")
 
-        response = requests.post(f"{config.METRICS_URL_DEV}?token={config.METRICS_TOKEN_DEV}", json=payload, headers={"Content-Type": "application/json"})
+        response = requests.post(f"{config.METRICS_WEBHOOK_URL_TEAM}?token={config.METRICS_TOKEN_TEAM}", json=payload, headers={"Content-Type": "application/json"})
         if response.status_code == 200:
             print("✅ Metrics sent successfully")
         else:

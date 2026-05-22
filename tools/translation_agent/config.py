@@ -1,3 +1,7 @@
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
 DOMAIN_ASPOSE_COM           = "blog.aspose.com"
 DOMAIN_GROUPDOCS_COM        = "blog.groupdocs.com"
 DOMAIN_CONHOLDATE_COM       = "blog.conholdate.com"
@@ -5,7 +9,7 @@ DOMAIN_ASPOSE_CLOUD         = "blog.aspose.cloud"
 DOMAIN_GROUPDOCS_CLOUD      = "blog.groupdocs.cloud"
 DOMAIN_CONHOLDATE_CLOUD     = "blog.conholdate.cloud"
 
-PRODUCTION_ENV = True
+PRODUCTION_ENV = False
 
 # KEYS ==========================================
 KEY_SHEET_ID            = "sheet_id"
@@ -20,21 +24,18 @@ SEND_EMAIL_FALSE        = "-"
 DEFAULT_TRANSLATION_LIMIT = 3
 
 # SHEET IDS =====================================
-SHEET_ID_ASPOSE_COM         = "1gxx6xk2HJ7IPpRsvLG7Ef18jc7BnQuAAJ33UyHn8b3w"
-SHEET_ID_GROUPDOCS_COM      = "1H8M5ZTBdSFRTuYMjzn-O0gRDX6beIB50t55g6dOPWoA"
-SHEET_ID_CONHOLDATE_COM     = "10vzH3ZBiURAXamt0VOppYODKZNmDt0LR_zYXb13YJhs"
-SHEET_ID_ASPOSE_CLOUD       = "1HcHQxooeva8iwnDmee-SX07KNKke5sXjWC6ZPJw1G0o"
-SHEET_ID_GROUPDOCS_CLOUD    = "1x0Jx0yniKjGMcccmb_2JPJylVP6EIWeN-H2UOC6Y47U"
-SHEET_ID_CONHOLDATE_CLOUD   = "1Ofoc8f-jbguE4rUGkKNLFvLObxPll9s3_Hw97UsZizs"
+SHEET_ID_ASPOSE_COM         = os.getenv("TRANSLATION_SCAN_SHEET_ID_ASPOSE_COM", "")
+SHEET_ID_GROUPDOCS_COM      = os.getenv("TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_COM", "")
+SHEET_ID_CONHOLDATE_COM     = os.getenv("TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_COM", "")
+SHEET_ID_ASPOSE_CLOUD       = os.getenv("TRANSLATION_SCAN_SHEET_ID_ASPOSE_CLOUD", "")
+SHEET_ID_GROUPDOCS_CLOUD    = os.getenv("TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_CLOUD", "")
+SHEET_ID_CONHOLDATE_CLOUD   = os.getenv("TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_CLOUD", "")
 
-PROFESSIONALIZE_BASE_URL    = "https://llm.professionalize.com/v1"
-PROFESSIONALIZE_LLM_MODEL   = "gpt-oss"
+SHEET_ID_SUMMARY        = os.getenv("TRANSLATION_SCAN_SHEET_ID_SUMMARY", "")
+SHEET_ID_TEST_QA        = os.getenv("TRANSLATION_SCAN_SHEET_ID_TEST_QA", "")
 
-SHEET_ID_TEST_QA        = "1LC7-DgkxufOqdmipJ-s-p_FZLixH0n6pNnPkIJjjqbc"
-METRICS_URL_DEV         = "https://script.google.com/macros/s/AKfycbwYyPBs3ox6xhYfznVpu4Gh8T4l7cXrAIj1m_y1g-vWn6tyP_LAkv3eo6W2EZYAeHgLag/exec"
-METRICS_TOKEN_DEV       = "blog_team_agent-2026"
-
-SHEET_ID_SUMMARY        = "1G_Q_shGbNXJCp-xu_maqFZWddpB-VksQh_Ni0OfxDts"
+PROFESSIONALIZE_BASE_URL    = os.getenv("PROFESSIONALIZE_BASE_URL", "")
+PROFESSIONALIZE_LLM_MODEL   = os.getenv("PROFESSIONALIZE_LLM_MODEL", "")
 
 # LOCAL GITHUB REPOS ============================
 LOC_GIT_REPO_ASPOSE_COM         = "blog-checkedout-repo/content/Aspose.Blog"
@@ -432,8 +433,11 @@ PLATFORMS = sorted({
 })
 
 # METRICS CONFIGURATION ========================
-METRICS_URL     = "https://script.google.com/macros/s/AKfycbyCHwElrM6RcYLi0JNQAkJmzGrBjAhf28mKXVyub_6SdaZ2ITvzCwfM5xCLE7rmuxio/exec"
-METRICS_TOKEN   = "lM6iU2mW0gV1eZ"
+METRICS_WEBHOOK_URL_TEAM = os.getenv("METRICS_WEBHOOK_URL_TEAM", "")
+METRICS_TOKEN_TEAM       = os.getenv("METRICS_TOKEN_TEAM", "")
+
+METRICS_WEBHOOK_URL_PROD = os.getenv("METRICS_WEBHOOK_URL_PROD", "")
+METRICS_TOKEN_PROD       = os.getenv("METRICS_TOKEN_PROD", "")
 
 AGENT_BLOG_SCANNER          = "Blog Scanner Agent"
 AGENT_BLOG_POST_TRANSLATOR  = "Blog Translator Agent"

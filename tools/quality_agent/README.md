@@ -36,6 +36,21 @@ source .venv/bin/activate    # Windows: .venv\Scripts\activate
 
 ---
 
+## Environment Variables
+
+The quality agent shares `config.py` and the `.env` file with the translation agent. All required variables are documented in [tools/translation_agent/README.md](../translation_agent/README.md#configuration).
+
+The key variables used by the quality agent are:
+
+| Variable | Purpose |
+|----------|---------|
+| `PROFESSIONALIZE_API_KEY` | LLM API key for AI validation and retranslation |
+| `PROFESSIONALIZE_BASE_URL` | LLM endpoint URL |
+| `PROFESSIONALIZE_LLM_MODEL` | Model name |
+| `GOOGLE_CREDENTIALS_JSON_SK` | Google Sheets service account credentials |
+
+---
+
 ## File Structure
 
 ```
