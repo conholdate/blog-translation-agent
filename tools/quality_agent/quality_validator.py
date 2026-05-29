@@ -40,12 +40,12 @@ from agents.models.openai_provider import OpenAIProvider
 # ============================================================================
 
 QUALITY_SHEET_IDS: dict[str, str] = {
-    config.DOMAIN_ASPOSE_COM:       "1BuiSIqBKWCpcGoiDsUz1oJPHj0PvIQpmoTrGUv8vv8Q",
-    config.DOMAIN_ASPOSE_CLOUD:     "1hhd3KgLsW0XplVsnE-ctTgpbdcRw8XfPAGxgDzkzufk",
-    config.DOMAIN_GROUPDOCS_COM:    "1Qr6pq438SJBvop9NWCjF5ALrjgX5UcjLhgZbrEZn78I",
-    config.DOMAIN_GROUPDOCS_CLOUD:  "1NtulRvHM8KDfK_OayKz7WeHtom-eyZlV8nmwr2OXypE",
-    config.DOMAIN_CONHOLDATE_COM:   "17rNwX6IdrB6QIMMcRS3haqELojlCHYDguP8zxCIkUUE",
-    config.DOMAIN_CONHOLDATE_CLOUD: "19sS8roVeISV4BbEhkRx5lY2FYUjZeY6JSBofzQdYkSs",
+    config.DOMAIN_ASPOSE_COM:       config.QUALITY_SHEET_ID_ASPOSE_COM,
+    config.DOMAIN_ASPOSE_CLOUD:     config.QUALITY_SHEET_ID_ASPOSE_CLOUD,
+    config.DOMAIN_GROUPDOCS_COM:    config.QUALITY_SHEET_ID_GROUPDOCS_COM,
+    config.DOMAIN_GROUPDOCS_CLOUD:  config.QUALITY_SHEET_ID_GROUPDOCS_CLOUD,
+    config.DOMAIN_CONHOLDATE_COM:   config.QUALITY_SHEET_ID_CONHOLDATE_COM,
+    config.DOMAIN_CONHOLDATE_CLOUD: config.QUALITY_SHEET_ID_CONHOLDATE_CLOUD,
 }
 
 # Column positions (1-indexed, matching SHEET_HEADERS in quality_scanner.py)

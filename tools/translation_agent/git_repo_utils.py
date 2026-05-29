@@ -1,9 +1,11 @@
 from git import Repo
 import os
+import sys
+sys.path.insert(0, os.path.dirname(__file__))
+import config
 
 def clone_or_pull_repos():
-    # GitHub token
-    token = read_token_from_file("/Users/Apple/Work/Aspose/keys/github/pat.txt")
+    token = config.GITHUB_TOKEN
 
     # List of repositories with custom clone paths
     repos = [
@@ -11,37 +13,37 @@ def clone_or_pull_repos():
             "username": "aspose",
             "repo_name": "aspose-blog",
             "domain_name": "blog.aspose.com",
-            "clone_path": "/Users/Apple/Work/Aspose/GitHub/blog.aspose.com-PROD"
+            "clone_path": config.GITHUB_CLONE_PATH_ASPOSE_COM
         },
         {
             "username": "groupdocs",
             "repo_name": "groupdocs-blog",
             "domain_name": "blog.groupdocs.com",
-            "clone_path": "/Users/Apple/Work/Aspose/GitHub/blog.groupdocs.com-PROD"
+            "clone_path": config.GITHUB_CLONE_PATH_GROUPDOCS_COM
         },
         {
             "username": "conholdate",
             "repo_name": "conholdate-blog",
             "domain_name": "blog.conholdate.com",
-            "clone_path": "/Users/Apple/Work/Aspose/GitHub/blog.conholdate.com-PROD"
+            "clone_path": config.GITHUB_CLONE_PATH_CONHOLDATE_COM
         },
         {
             "username": "aspose-cloud",
             "repo_name": "aspose-cloud-blog",
             "domain_name": "blog.aspose.cloud",
-            "clone_path": "/Users/Apple/Work/Aspose/GitHub/blog.aspose.cloud-PROD"
+            "clone_path": config.GITHUB_CLONE_PATH_ASPOSE_CLOUD
         },
         {
             "username": "groupdocs-cloud",
             "repo_name": "groupdocs-cloud-blog",
             "domain_name": "blog.groupdocs.cloud",
-            "clone_path": "/Users/Apple/Work/Aspose/GitHub/blog.groupdocs.cloud-PROD"
+            "clone_path": config.GITHUB_CLONE_PATH_GROUPDOCS_CLOUD
         },
         {
             "username": "conholdate-cloud",
             "repo_name": "blog.conholdate.cloud",
             "domain_name": "blog.conholdate.cloud",
-            "clone_path": "/Users/Apple/Work/Aspose/GitHub/blog.conholdate.cloud-PROD"
+            "clone_path": config.GITHUB_CLONE_PATH_CONHOLDATE_CLOUD
         },
     ]
     
@@ -69,8 +71,3 @@ def clone_or_pull_repos():
             origin.pull()
 
         print("Done.\n")
-
-# ===============================================
-def read_token_from_file(file_path):
-    with open(file_path, 'r') as file:
-        return file.read().strip()
