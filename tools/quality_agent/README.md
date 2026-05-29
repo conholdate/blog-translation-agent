@@ -48,6 +48,12 @@ The key variables used by the quality agent are:
 | `PROFESSIONALIZE_BASE_URL` | LLM endpoint URL |
 | `PROFESSIONALIZE_LLM_MODEL` | Model name |
 | `GOOGLE_CREDENTIALS_JSON_SK` | Google Sheets service account credentials |
+| `QUALITY_SHEET_ID_ASPOSE_COM` | Quality sheet ID for blog.aspose.com |
+| `QUALITY_SHEET_ID_ASPOSE_CLOUD` | Quality sheet ID for blog.aspose.cloud |
+| `QUALITY_SHEET_ID_GROUPDOCS_COM` | Quality sheet ID for blog.groupdocs.com |
+| `QUALITY_SHEET_ID_GROUPDOCS_CLOUD` | Quality sheet ID for blog.groupdocs.cloud |
+| `QUALITY_SHEET_ID_CONHOLDATE_COM` | Quality sheet ID for blog.conholdate.com |
+| `QUALITY_SHEET_ID_CONHOLDATE_CLOUD` | Quality sheet ID for blog.conholdate.cloud |
 
 ---
 
@@ -55,13 +61,16 @@ The key variables used by the quality agent are:
 
 ```
 tools/
-├── translation_agent/          # Existing translation agent
+├── translation_agent/          # Blog Translation Agent
 └── quality_agent/              # Quality Control Agent
     ├── quality_scanner.py      # Phase 1 — heuristic scan
     ├── quality_validator.py    # Phase 2 — AI validation
     ├── quality_retranslator.py # Phase 3 — retranslation
-    └── lang_guard.py           # Language utility functions
+    ├── lang_guard.py           # Language utility functions
+    └── tests/                  # Unit tests
 ```
+
+For the full state model and control flow see [docs/ORCHESTRATION.md](../../docs/ORCHESTRATION.md).
 
 ---
 
@@ -69,7 +78,7 @@ tools/
 
 Each domain has its own quality sheet. The sheet is created/overwritten each run with a tab named by date (`YYYY-MM-DD`).
 
-Sheet IDs are configured in `quality_scanner.py` under `QUALITY_SHEET_IDS`. Ask the team for access to the relevant sheets.
+Sheet IDs are loaded from environment variables (`QUALITY_SHEET_ID_*`) via `config.py`. Ask the team for access to the relevant sheets.
 
 ### Sheet Columns
 

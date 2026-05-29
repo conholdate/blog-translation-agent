@@ -4,7 +4,7 @@
 This file defines the operational boundaries for all AI agents in this repository.
 Agents must not read, write, or modify any path not explicitly listed below.
 
-Last updated: 2026-04-30
+Last updated: 2026-05-29
 Authority: Shoaib Khan
 
 ---
@@ -60,6 +60,9 @@ Authority: Shoaib Khan
 | `tools/translation_agent/tests/` | Test suite — human-controlled |
 | `tools/quality_agent/tests/` | Test suite — human-controlled |
 | `README.md` | Documentation — human-controlled |
+| `CONTRIBUTING.md` | Documentation — human-controlled |
+| `docs/` | Documentation — human-controlled |
+| `.github/CODEOWNERS` | Ownership file — human-controlled |
 
 ---
 

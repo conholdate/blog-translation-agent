@@ -5,8 +5,8 @@
 ### 1. Clone and create virtual environment
 
 ```bash
-git clone https://github.com/conholdate/blog-translation-agent.git
-cd blog-translation-agent
+git clone https://gitlab.recruitize.ai/sialkot/lahore-aspose/lahore-blogs-team/blog-post-translator.git
+cd blog-post-translator
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt

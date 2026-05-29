@@ -35,6 +35,9 @@ blog-translation-agent/
 │   ├── translation_agent/          # Blog Translation Agent
 │   │   ├── translator.py
 │   │   ├── scan_missing_translations.py
+│   │   ├── git_repo_utils.py
+│   │   ├── io_google_spreadsheet.py
+│   │   ├── utils.py
 │   │   ├── config.py
 │   │   ├── tests/
 │   │   └── README.md
@@ -45,7 +48,14 @@ blog-translation-agent/
 │       ├── lang_guard.py
 │       ├── tests/
 │       └── README.md
-├── .github/workflows/              # GitHub Actions
+├── docs/
+│   ├── ARCHITECTURE.md             # System overview and component map
+│   └── ORCHESTRATION.md            # State model, control flow, extension points
+├── .github/
+│   ├── workflows/                  # GitHub Actions
+│   └── CODEOWNERS
+├── AGENTS.md                       # Agent governance policy
+├── CONTRIBUTING.md                 # Developer guide
 └── pytest.ini
 ```
 
@@ -53,15 +63,19 @@ blog-translation-agent/
 
 ## Environment Variables
 
-The following environment variables are required. In GitHub Actions they are stored as repository secrets.
+All secrets and environment-specific paths are stored in `tools/translation_agent/.env` for local development and as repository secrets in GitHub Actions. No credentials are hardcoded in any committed file.
 
-| Variable | Required By | Description |
-|----------|-------------|-------------|
-| `PROFESSIONALIZE_API_KEY` | Translation Agent, Quality Agent | API key for the LLM translation service |
-| `GOOGLE_CREDENTIALS_JSON_SK` | Both agents | Google service account JSON for Sheets access |
-| `PAT_GITHUB_SK` | CI workflows | GitHub Personal Access Token — used to push translated content to target blog repos |
+Key variables:
 
-For local development, create a `.env` file in `tools/translation_agent/` with `PROFESSIONALIZE_API_KEY=<your-key>`.
+| Variable | Description |
+|----------|-------------|
+| `PROFESSIONALIZE_API_KEY` | API key for the LLM translation service |
+| `GOOGLE_CREDENTIALS_JSON_SK` | Google service account JSON for Sheets access |
+| `GITHUB_TOKEN` | GitHub Personal Access Token for cloning and pushing blog repos |
+| `METRICS_WEBHOOK_URL_PROD` / `METRICS_TOKEN_PROD` | Production metrics webhook |
+| `METRICS_WEBHOOK_URL_TEAM` / `METRICS_TOKEN_TEAM` | Team metrics webhook |
+
+For the full variable list see [CONTRIBUTING.md](CONTRIBUTING.md#setup).
 
 ---
 

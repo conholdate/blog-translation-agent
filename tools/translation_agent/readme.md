@@ -38,7 +38,7 @@ A two-part automation system that:
 ### 1. Clone Repository
 
 ```bash
-git clone https://gitlab.recruitize.ai/sialkot/lahore-aspose/lahore-blogs-team/blog-post-translator
+git clone https://gitlab.recruitize.ai/sialkot/lahore-aspose/lahore-blogs-team/blog-post-translator.git
 cd blog-post-translator
 ```
 
@@ -53,14 +53,14 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 ```bash
 pip install --upgrade pip
-pip install -r tools/translation_agent/requirements.txt
+pip install -r requirements.txt
 ```
 
 ---
 
 ## 🔧 Configuration
 
-Create a `.env` file in `tools/translation_agent/` with the following variables. In GitHub Actions these are stored as repository secrets.
+Create `tools/translation_agent/.env` with the variables below. In GitHub Actions these are stored as repository secrets. `config.py` loads this file automatically via `python-dotenv`.
 
 ```bash
 # LLM translation service
@@ -70,6 +70,17 @@ PROFESSIONALIZE_LLM_MODEL=
 
 # Google Sheets service account (full JSON, minified to one line)
 GOOGLE_CREDENTIALS_JSON_SK=
+
+# GitHub access
+GITHUB_TOKEN=
+
+# Local clone paths for the six blog repositories
+GITHUB_CLONE_PATH_ASPOSE_COM=
+GITHUB_CLONE_PATH_ASPOSE_CLOUD=
+GITHUB_CLONE_PATH_GROUPDOCS_COM=
+GITHUB_CLONE_PATH_GROUPDOCS_CLOUD=
+GITHUB_CLONE_PATH_CONHOLDATE_COM=
+GITHUB_CLONE_PATH_CONHOLDATE_CLOUD=
 
 # Metrics webhooks
 METRICS_WEBHOOK_URL_PROD=
@@ -87,8 +98,6 @@ TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_CLOUD=
 TRANSLATION_SCAN_SHEET_ID_SUMMARY=
 TRANSLATION_SCAN_SHEET_ID_TEST_QA=
 ```
-
-`config.py` loads this file automatically via `python-dotenv` — no manual export needed for local runs.
 
 ---
 
@@ -171,35 +180,37 @@ zh (Chinese)        | zh-hant (Chinese Traditional)
 ### Components
 
 ```
-blog-post-translator/
-├── tools/translation_agent/
-│   ├── scan_missing_translations.py   # Scanner component
-│   ├── translator.py                  # Translation component
-│   ├── config.py                      # Configuration
-│   ├── io_google_spreadsheet.py       # Google Sheets integration
-│   └── requirements.txt               # Dependencies
-├── .github/workflows/
-│   ├── scan-missing-translations.yml  # Daily scan workflow
-│   └── translate-blogs.yml            # Manual translation workflow
-└── README.md
+tools/translation_agent/
+├── translator.py                  # TranslationOrchestrator + 3 agent classes
+├── scan_missing_translations.py   # Missing-translation scanner
+├── git_repo_utils.py              # Clone / pull blog repos via GitHub PAT
+├── io_google_spreadsheet.py       # Google Sheets read/write
+├── utils.py                       # Metrics webhook calls
+├── config.py                      # All constants and env-var-backed secrets
+└── tests/
 ```
 
 ### Translation Agents
 
 **TranslationOrchestrator**
-- Coordinates the translation workflow
-- Manages agent interactions
-- Handles file I/O operations
+- Coordinates the full translation workflow and token tracking
+- Wires up the three specialized agents below
 
 **FrontmatterTranslatorAgent**
-- Translates YAML frontmatter fields
-- Protects product names and metadata
-- Updates URLs with language prefixes
+- Translates YAML front matter fields (title, description, tags)
+- Protects product names and critical metadata
+- Updates URLs with language prefix
 
 **ContentTranslatorAgent**
-- Translates markdown content
-- Preserves formatting and code blocks
-- Implements retry logic with AI validation
+- Translates Markdown body in chunks
+- Preserves code blocks, Hugo shortcodes, and formatting
+- Retries up to 3 times per chunk with AI validation on failure
+
+**PlatformIdentifierAgent**
+- Identifies the programming platform (.NET, Java, Python, …)
+- Provides platform context to improve translation accuracy
+
+For full control flow and state model see [docs/ORCHESTRATION.md](../../docs/ORCHESTRATION.md).
 
 ---
 
