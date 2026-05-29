@@ -1,0 +1,17 @@
+# Default owner for everything
+* @mshoaibkhankk
+
+# Translation agent — Shoaib Khan owns the Translation and Quality Control Agent. Muzammil, Farhan and others were co-contrubutor and users in earlier phases of this translation project when it was just a translation tool using Google Translation APIs.
+tools/translation_agent/ @mshoaibkhankk @muzammilzkhan @farhanrazablog
+
+# Quality control agent — Shoaib Khan owns
+tools/quality_agent/ @mshoaibkhankk
+
+# CI/CD workflows
+.github/workflows/ @mshoaibkhankk
+
+# Configuration and dependencies
+requirements.txt @mshoaibkhankk
+requirements.lock @mshoaibkhankk
+pytest.ini @mshoaibkhankk
+AGENTS.md @mshoaibkhankk
