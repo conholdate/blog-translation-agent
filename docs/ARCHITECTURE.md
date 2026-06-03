@@ -61,7 +61,7 @@
 |---------|---------|------------|
 | LLM API (`PROFESSIONALIZE_BASE_URL`) | Translation Agent, Quality Validator, Quality Retranslator | `PROFESSIONALIZE_API_KEY` |
 | Google Sheets | Both agents | `GOOGLE_CREDENTIALS_JSON_SK` (service account JSON) |
-| GitHub (6 blog repos) | `git_repo_utils.py` | `GITHUB_TOKEN` |
+| GitHub (6 blog repos) | `git_repo_utils.py` | `PAT_GITHUB_SK` |
 | Google Apps Script webhooks (2) | `utils.py` | `METRICS_TOKEN_TEAM`, `METRICS_TOKEN_PROD` |
 
 ---

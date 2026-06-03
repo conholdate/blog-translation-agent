@@ -71,7 +71,7 @@ Key variables:
 |----------|-------------|
 | `PROFESSIONALIZE_API_KEY` | API key for the LLM translation service |
 | `GOOGLE_CREDENTIALS_JSON_SK` | Google service account JSON for Sheets access |
-| `GITHUB_TOKEN` | GitHub Personal Access Token for cloning and pushing blog repos |
+| `PAT_GITHUB_SK` | GitHub Personal Access Token for cloning and pushing blog repos |
 | `METRICS_WEBHOOK_URL_PROD` / `METRICS_TOKEN_PROD` | Production metrics webhook |
 | `METRICS_WEBHOOK_URL_TEAM` / `METRICS_TOKEN_TEAM` | Team metrics webhook |
 
