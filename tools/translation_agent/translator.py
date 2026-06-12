@@ -473,7 +473,7 @@ class ContentTranslatorAgent:
 
         while i < n:
             paragraph = paragraphs[i]    
-            print(f"   📝 Translating paragraph {i+1}/{len(paragraphs)} : {paragraph.replace("\n", "")[:20]}...", end=" : ", flush=True)
+            print(f"   📝 Translating paragraph {i+1}/{len(paragraphs)} : {paragraph[:20].replace(chr(10), '')}...", end=" : ", flush=True)
             
             # if paragraph starts with ``` and does not ends with ```, then it's a code block start
             # so keep adding next paragraphs until we find the ending ```
@@ -598,7 +598,7 @@ class ContentTranslatorAgent:
                 if attempt > 0:
                     print(f"   ✓ Translation successful on attempt {attempt + 1} (skipped validation)")
                 
-                print(f"   -- Skip validation -- >>{translated_chunk.replace("\n", "")[:20]}")
+                print(f"   -- Skip validation -- >>{translated_chunk[:20].replace(chr(10), '')}")
 
                 return translated_chunk
 
@@ -654,7 +654,7 @@ class ContentTranslatorAgent:
         translated_words = set(translated_clean.split())
 
         if len(original_words) <= 2:  # Very short text
-            print(f"   Short Text -- >>{translated.replace("\n", "")[:20]}")
+            print(f"   Short Text -- >>{translated[:20].replace(chr(10), '')}")
             return len(translated_words) > 0
 
         changed_words = len(original_words - translated_words)
@@ -664,7 +664,7 @@ class ContentTranslatorAgent:
         # print(f"   Changed words: {changed_words}")
         # print(f"   Original words: {original_words}")
         # print(f"   Translated words: {translated_words}")
-        print(f"   Changed words %: {change_percent:.0f}% -- >>{translated.replace("\n", "")[:20]}")
+        print(f"   Changed words %: {change_percent:.0f}% -- >>{translated[:20].replace(chr(10), '')}")
 
         return change_percent > 20  # Lower threshold for quick check
 

@@ -17,6 +17,17 @@ BASE_DIR = os.getenv("GITHUB_WORKSPACE", os.getcwd())
 
 printing_allowed = False
 
+# History tab constants
+HISTORY_TAB             = "history"
+HISTORY_HEADERS         = [
+    "Scan Date", "Domain", "Product", "Blog Post Directory",
+    "Blog Post URL", "Author", "Missing Translations", "Missing Count",
+    "Status", "Completed Date",
+]
+HISTORY_STATUS_PENDING   = "pending"
+HISTORY_STATUS_PARTIAL   = "partial"
+HISTORY_STATUS_COMPLETED = "completed"
+
 # ======================================================================================
 # Write Function
 # ======================================================================================
@@ -53,6 +64,191 @@ def get_gc():
             print(f"❌ Error: Credentials file not found at {JSON_KEY_FILE}", file=sys.stderr)
     
     return None
+
+def get_scan_gc():
+    """Return a gspread client using GOOGLE_SERVICE_ACCOUNT_JSON (consolidated scan sheet account)."""
+    raw = config.GOOGLE_SERVICE_ACCOUNT_JSON
+    if not raw:
+        print("❌ GOOGLE_SERVICE_ACCOUNT_JSON is not set.", file=sys.stderr)
+        return None
+    try:
+        return gspread.service_account_from_dict(json.loads(raw))
+    except (json.JSONDecodeError, Exception) as e:
+        print(f"❌ Failed to initialise scan GSheets client: {e}", file=sys.stderr)
+        return None
+
+
+def get_scan_worksheet(domain: str) -> gspread.Worksheet:
+    """
+    Open the consolidated scan sheet and return the worksheet for the given domain.
+    The worksheet title is expected to match the domain name exactly (e.g. 'blog.aspose.com').
+    Returns None if the sheet or worksheet cannot be opened.
+    """
+    gc = get_scan_gc()
+    if not gc:
+        return None
+    try:
+        sh = gc.open_by_key(config.TRANSLATION_SCAN_SHEET_ID)
+        return sh.worksheet(domain)
+    except gspread.exceptions.WorksheetNotFound:
+        print(f"❌ Worksheet '{domain}' not found in consolidated scan sheet.", file=sys.stderr)
+        return None
+    except Exception as e:
+        print(f"❌ Could not open scan sheet: {e}", file=sys.stderr)
+        return None
+
+
+def _auto_resize_columns(ws: gspread.Worksheet) -> None:
+    ws.spreadsheet.batch_update({"requests": [{"autoResizeDimensions": {"dimensions": {
+        "sheetId": ws.id, "dimension": "COLUMNS",
+        "startIndex": 0, "endIndex": ws.col_count,
+    }}}]})
+
+
+def write_domain_scan_results(domain: str, scan_date: str, rows: List[list], headers: List[str]) -> bool:
+    """
+    Overwrite the domain tab in the consolidated scan sheet with the latest scan results.
+
+    - Prepends 'Scan Date' as the first column on both the header row and every data row.
+    - Clears all existing content before writing.
+
+    Returns True on success, False on failure.
+    """
+    ws = get_scan_worksheet(domain)
+    if not ws:
+        return False
+
+    try:
+        # Build header and data with Scan Date prepended
+        header_row = ["Scan Date"] + headers
+        data_rows  = [[scan_date] + row for row in rows]
+
+        ws.clear()
+        ws.update([header_row] + data_rows, value_input_option="USER_ENTERED")
+        _auto_resize_columns(ws)
+
+        print(f"✅ Scan results written to '{domain}' tab ({len(data_rows)} rows).")
+        return True
+
+    except Exception as e:
+        print(f"❌ Failed to write scan results for '{domain}': {e}", file=sys.stderr)
+        return False
+
+
+def _get_history_worksheet() -> gspread.Worksheet:
+    """Return the 'history' worksheet, creating it if it doesn't exist."""
+    gc = get_scan_gc()
+    if not gc:
+        return None
+    try:
+        sh = gc.open_by_key(config.TRANSLATION_SCAN_SHEET_ID)
+        try:
+            return sh.worksheet(HISTORY_TAB)
+        except gspread.exceptions.WorksheetNotFound:
+            ws = sh.add_worksheet(title=HISTORY_TAB, rows=5000, cols=len(HISTORY_HEADERS))
+            ws.append_row(HISTORY_HEADERS, value_input_option="USER_ENTERED")
+            print(f"✅ Created '{HISTORY_TAB}' worksheet.")
+            return ws
+    except Exception as e:
+        print(f"❌ Could not open history worksheet: {e}", file=sys.stderr)
+        return None
+
+
+def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) -> bool:
+    """
+    Update the history tab with the latest scan results for a domain.
+
+    current_rows must match HEADERS_MISSING_TRANSLATIONS column order:
+    [domain, product, slug, url, author, missing_count, missing_langs, extra, extra_count, status]
+
+    Logic per existing history row (Status != completed):
+      - Post gone from current scan   → Status = completed, Completed Date = scan_date
+      - Post present, fewer languages → Status = partial,   update Missing Translations
+      - Post present, same languages  → no change
+
+    New posts not yet in history → appended as pending.
+    """
+    ws = _get_history_worksheet()
+    if not ws:
+        return False
+
+    try:
+        all_rows = ws.get_all_values()
+        data_rows = all_rows[1:] if len(all_rows) > 1 else []   # skip header
+
+        # Column indices inside a history row (0-based)
+        C_SLUG    = 3
+        C_DOMAIN  = 1
+        C_LANGS   = 6
+        C_COUNT   = 7
+        C_STATUS  = 8
+        C_DONE    = 9
+
+        # Build lookup from current scan keyed by (domain, slug)
+        # current_rows: [domain(0), product(1), slug(2), url(3), author(4),
+        #                missing_count(5), missing_langs(6), extra(7), extra_count(8), status(9)]
+        current_lookup = {
+            (r[0], r[2]): r
+            for r in current_rows
+            if len(r) >= 7 and r[0] and r[2]
+        }
+
+        batch_updates = []
+        seen_keys     = set()
+
+        for i, row in enumerate(data_rows):
+            row = list(row) + [""] * (len(HISTORY_HEADERS) - len(row))  # pad short rows
+
+            if row[C_DOMAIN] != domain:
+                continue
+            if row[C_STATUS] == HISTORY_STATUS_COMPLETED:
+                continue
+
+            key = (row[C_DOMAIN], row[C_SLUG])
+            seen_keys.add(key)
+            sheet_row = i + 2   # +1 header, +1 for 1-indexed
+
+            if key in current_lookup:
+                cur = current_lookup[key]
+                cur_langs  = {l.strip() for l in str(cur[6]).split(",") if l.strip()}
+                hist_langs = {l.strip() for l in row[C_LANGS].split(",")  if l.strip()}
+
+                if cur_langs < hist_langs:
+                    row[C_LANGS]   = cur[6]
+                    row[C_COUNT]   = str(cur[5])
+                    row[C_STATUS]  = HISTORY_STATUS_PARTIAL
+                    batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
+            else:
+                row[C_STATUS] = HISTORY_STATUS_COMPLETED
+                row[C_DONE]   = scan_date
+                batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
+
+        if batch_updates:
+            ws.batch_update(batch_updates, value_input_option="USER_ENTERED")
+
+        # Append rows for posts not yet in history
+        new_rows = [
+            [
+                scan_date, r[0], r[1], r[2], r[3], r[4],
+                r[6], str(r[5]), HISTORY_STATUS_PENDING, "",
+            ]
+            for r in current_rows
+            if len(r) >= 7 and r[0] and r[2]
+            and (r[0], r[2]) not in seen_keys
+        ]
+
+        if new_rows:
+            ws.append_rows(new_rows, value_input_option="USER_ENTERED")
+
+        _auto_resize_columns(ws)
+
+        print(f"✅ History updated for '{domain}': {len(batch_updates)} updated, {len(new_rows)} new.")
+        return True
+
+    except Exception as e:
+        print(f"❌ Failed to update history for '{domain}': {e}", file=sys.stderr)
+        return False
+
 
 def write_to_google_spreadsheet(
     spreadsheet_id: str,

@@ -17,7 +17,7 @@ from openpyxl.styles import Font, Alignment
 from datetime import datetime
 from git import Repo
 from git_repo_utils import clone_or_pull_repos
-from io_google_spreadsheet import write_to_google_spreadsheet
+from io_google_spreadsheet import write_to_google_spreadsheet, write_domain_scan_results, update_history_tab
 from translation_files_managers import delete_translation_files
 from translator import start_translation
 
@@ -197,6 +197,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             # =============== SAVE ==============
             # Get current date
             current_date = datetime.now().strftime("%Y-%m-%d")
+            scan_date    = datetime.now().astimezone().isoformat()
 
             # for name in input_names:
             #     # Convert the input name to title case to match the dictionary keys
@@ -242,9 +243,19 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
 
             else:
                 converted_result.append(["", "!!! NO MISSING TRANSLATION FOUND !!!"])
-            
-            # print (f"Modified Investigation Result ->\n{converted_result}")
 
+            # --- Write to consolidated scan sheet ---
+            write_domain_scan_results(
+                domain    = domain,
+                scan_date = scan_date,
+                rows      = converted_result if result else [],
+                headers   = config.HEADERS_MISSING_TRANSLATIONS
+            )
+            update_history_tab(
+                domain       = domain,
+                scan_date    = scan_date,
+                current_rows = converted_result if result else [],
+            )
 
             max_retries = 3
             # generate random delay between 2 to 5 seconds
