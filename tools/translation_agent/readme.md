@@ -53,14 +53,14 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 ```bash
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements.lock
 ```
 
 ---
 
 ## 🔧 Configuration
 
-Create `tools/translation_agent/.env` with the variables below. In GitHub Actions these are stored as repository secrets. `config.py` loads this file automatically via `python-dotenv`.
+Create `.env` at the **project root** (copy from `.env.example`) with the variables below. In GitHub Actions these are stored as repository secrets. `config.py` loads this file automatically via `python-dotenv`.
 
 ```bash
 # LLM translation service
@@ -68,8 +68,12 @@ PROFESSIONALIZE_API_KEY=
 PROFESSIONALIZE_BASE_URL=
 PROFESSIONALIZE_LLM_MODEL=
 
-# Google Sheets service account (full JSON, minified to one line)
+# Google Sheets — per-domain scan sheets (full JSON, minified to one line)
 GOOGLE_CREDENTIALS_JSON_SK=
+
+# Google Sheets — consolidated scan sheet (full JSON, minified to one line)
+GOOGLE_SERVICE_ACCOUNT_JSON=
+TRANSLATION_SCAN_SHEET_ID=
 
 # GitHub access
 PAT_GITHUB_SK=

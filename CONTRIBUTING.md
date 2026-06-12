@@ -9,45 +9,18 @@ git clone https://gitlab.recruitize.ai/sialkot/lahore-aspose/lahore-blogs-team/b
 cd blog-post-translator
 python -m venv .venv
 source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements.lock
 ```
 
 ### 2. Configure environment variables
 
-Copy the required variables into `tools/translation_agent/.env`:
+Copy `.env.example` to `.env` at the project root and fill in the values:
 
 ```bash
-PROFESSIONALIZE_API_KEY=
-PROFESSIONALIZE_BASE_URL=
-PROFESSIONALIZE_LLM_MODEL=
-GOOGLE_CREDENTIALS_JSON_SK=
-PAT_GITHUB_SK=
-METRICS_WEBHOOK_URL_PROD=
-METRICS_TOKEN_PROD=
-METRICS_WEBHOOK_URL_TEAM=
-METRICS_TOKEN_TEAM=
-CLONE_PATH_GITHUB_ASPOSE_COM=
-CLONE_PATH_GITHUB_GROUPDOCS_COM=
-CLONE_PATH_GITHUB_CONHOLDATE_COM=
-CLONE_PATH_GITHUB_ASPOSE_CLOUD=
-CLONE_PATH_GITHUB_GROUPDOCS_CLOUD=
-CLONE_PATH_GITHUB_CONHOLDATE_CLOUD=
-TRANSLATION_SCAN_SHEET_ID_ASPOSE_COM=
-TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_COM=
-TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_COM=
-TRANSLATION_SCAN_SHEET_ID_ASPOSE_CLOUD=
-TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_CLOUD=
-TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_CLOUD=
-TRANSLATION_SCAN_SHEET_ID_SUMMARY=
-QUALITY_SHEET_ID_ASPOSE_COM=
-QUALITY_SHEET_ID_ASPOSE_CLOUD=
-QUALITY_SHEET_ID_GROUPDOCS_COM=
-QUALITY_SHEET_ID_GROUPDOCS_CLOUD=
-QUALITY_SHEET_ID_CONHOLDATE_COM=
-QUALITY_SHEET_ID_CONHOLDATE_CLOUD=
+cp .env.example .env
 ```
 
-Ask the team for actual values. Never commit this file.
+Ask the team for actual values. Never commit `.env`.
 
 ### 3. Run tests
 

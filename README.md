@@ -63,19 +63,21 @@ blog-translation-agent/
 
 ## Environment Variables
 
-All secrets and environment-specific paths are stored in `tools/translation_agent/.env` for local development and as repository secrets in GitHub Actions. No credentials are hardcoded in any committed file.
+All secrets and environment-specific paths are stored in `.env` at the project root for local development and as repository secrets in GitHub Actions. No credentials are hardcoded in any committed file. Copy `.env.example` to `.env` and fill in the values to get started.
 
 Key variables:
 
 | Variable | Description |
 |----------|-------------|
-| `PROFESSIONALIZE_API_KEY` | API key for the LLM translation service |
-| `GOOGLE_CREDENTIALS_JSON_SK` | Google service account JSON for Sheets access |
+| `PROFESSIONALIZE_API_KEY` | LLM API key for translation and quality validation |
+| `GOOGLE_CREDENTIALS_JSON_SK` | Google service account for per-domain scan sheets |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google service account for the consolidated scan sheet |
+| `TRANSLATION_SCAN_SHEET_ID` | Consolidated scan sheet (one tab per domain + history tab) |
 | `PAT_GITHUB_SK` | GitHub Personal Access Token for cloning and pushing blog repos |
 | `METRICS_WEBHOOK_URL_PROD` / `METRICS_TOKEN_PROD` | Production metrics webhook |
 | `METRICS_WEBHOOK_URL_TEAM` / `METRICS_TOKEN_TEAM` | Team metrics webhook |
 
-For the full variable list see [CONTRIBUTING.md](CONTRIBUTING.md#setup).
+For the full list of all 34 variables see [.env.example](.env.example).
 
 ---
 

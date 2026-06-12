@@ -19,26 +19,35 @@ The Quality Control Agent adds three automated phases on top of the existing Blo
 ## Prerequisites
 
 - Python 3.13+
-- Same virtual environment as the Blog Translation Agent (`.venv`)
-- Google Sheets service account credentials (same as the translation agent)
+- Root `.venv` from the project root (shared with the Translation Agent)
+- `.env` at the project root with all required variables
 - API key for the translation/LLM service
 
 ---
 
 ## Installation
 
-No additional dependencies. The quality agent shares the same `requirements.txt` and `.venv` as the translation agent.
+No additional dependencies. The quality agent shares `requirements.lock`, `.venv`, and `.env` with the translation agent — all at the project root.
 
 ```bash
 cd blog-post-translator
 source .venv/bin/activate    # Windows: .venv\Scripts\activate
 ```
 
+If you haven't set up the environment yet:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.lock
+cp .env.example .env          # then fill in values
+```
+
 ---
 
 ## Environment Variables
 
-The quality agent shares `config.py` and the `.env` file with the translation agent. All required variables are documented in [tools/translation_agent/README.md](../translation_agent/README.md#configuration).
+The quality agent shares `config.py` and `.env` (at the project root) with the translation agent. All variables are listed in [.env.example](../../.env.example).
 
 The key variables used by the quality agent are:
 
@@ -47,7 +56,9 @@ The key variables used by the quality agent are:
 | `PROFESSIONALIZE_API_KEY` | LLM API key for AI validation and retranslation |
 | `PROFESSIONALIZE_BASE_URL` | LLM endpoint URL |
 | `PROFESSIONALIZE_LLM_MODEL` | Model name |
-| `GOOGLE_CREDENTIALS_JSON_SK` | Google Sheets service account credentials |
+| `GOOGLE_CREDENTIALS_JSON_SK` | Google service account for per-domain scan sheets |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Google service account for the consolidated scan sheet |
+| `TRANSLATION_SCAN_SHEET_ID` | Consolidated scan sheet (one tab per domain + history) |
 | `QUALITY_SHEET_ID_ASPOSE_COM` | Quality sheet ID for blog.aspose.com |
 | `QUALITY_SHEET_ID_ASPOSE_CLOUD` | Quality sheet ID for blog.aspose.cloud |
 | `QUALITY_SHEET_ID_GROUPDOCS_COM` | Quality sheet ID for blog.groupdocs.com |
