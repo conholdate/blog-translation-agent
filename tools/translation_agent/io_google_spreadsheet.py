@@ -39,7 +39,7 @@ def get_gc():
         try:
             credentials_info = json.loads(json_content)
             gc = gspread.service_account_from_dict(credentials_info)
-            print("✅ GSheets client initialized using GitHub Secret.")
+            print("✅ GSheets client initialized.")
             
             return gc
         

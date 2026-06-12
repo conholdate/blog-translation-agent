@@ -270,7 +270,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                     sheet_link = write_to_google_spreadsheet(config.SHEET_ID_TEST_QA, valid_extensions, config.HEADERS_MISSING_TRANSLATIONS, converted_result, f"{domain}-{current_date}")
 
                 if sheet_link:
-                    print(f"@ {sheet_link}")
+                    print(f"✅ Scan results written to sheet.")
                     break  # Success! Exit loop
                 else:
                     print(f"Attempt {attempt + 1} failed. Retrying in {retry_delay}s...")
@@ -323,7 +323,8 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                 print("⚠️  KEY IS REQUIRED FOR TRANSLATION ⚠️")
                 break
 
-            print(f"args: {args}")
+            safe_args = ["***" if (i > 0 and args[i-1] == "--key") else a for i, a in enumerate(args)]
+            print(f"args: {safe_args}")
             
             if is_translate:
                 print(f"Translating Missing Files for: {domain}...")
@@ -344,7 +345,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
     else:
         sheet_link = write_to_google_spreadsheet(config.SHEET_ID_TEST_QA, None ,config.HEADERS_SUMMARY, SUMMARY_DATA, f"SUM-{current_date}")
 
-    print(f"Summary Saved @ > {sheet_link}")
+    print(f"✅ Summary written to sheet.")
 
     return missing_translations_stats
 
