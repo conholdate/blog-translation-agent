@@ -163,8 +163,9 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
         path_to_valid_extensions (dict): A dictionary mapping paths to their valid file extensions.
     """
     missing_translations_stats = Stats(0, 0, 0, 0)
+    current_date = datetime.now().strftime("%Y-%m-%d")
+    scan_date    = datetime.now().astimezone().isoformat()
 
-    # output_path = "/Users/Apple/Library/CloudStorage/GoogleDrive-shoaib.khan@aspose.com/My Drive/Blogs Team/missing-translations/"
     global target_product
     print("=================================================================")
     print("\t\tMissing OR Invalid Translations")
@@ -195,9 +196,6 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             # print(f"- {domain_name}\t- @github.com/{username}/{repo_name}.git ...  \t - Pulling latest ...  ", end=' ', flush=True)
 
             # =============== SAVE ==============
-            # Get current date
-            current_date = datetime.now().strftime("%Y-%m-%d")
-            scan_date    = datetime.now().astimezone().isoformat()
 
             # for name in input_names:
             #     # Convert the input name to title case to match the dictionary keys

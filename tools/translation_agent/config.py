@@ -1,6 +1,12 @@
 import os
 from dotenv import load_dotenv
-load_dotenv()
+
+# .env lives at the project root — two levels above this file
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '.env')
+_is_local = os.path.exists(_env_path)
+load_dotenv(dotenv_path=_env_path)
+
+PRODUCTION_ENV = not _is_local  # True in CI (no .env file), False locally
 
 DOMAIN_ASPOSE_COM           = "blog.aspose.com"
 DOMAIN_GROUPDOCS_COM        = "blog.groupdocs.com"
@@ -8,8 +14,6 @@ DOMAIN_CONHOLDATE_COM       = "blog.conholdate.com"
 DOMAIN_ASPOSE_CLOUD         = "blog.aspose.cloud"
 DOMAIN_GROUPDOCS_CLOUD      = "blog.groupdocs.cloud"
 DOMAIN_CONHOLDATE_CLOUD     = "blog.conholdate.cloud"
-
-PRODUCTION_ENV = False
 
 # KEYS ==========================================
 KEY_SHEET_ID            = "sheet_id"
