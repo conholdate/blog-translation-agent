@@ -131,7 +131,7 @@ jobs:
       # 0. CHECKOUT THIS REPO (blog-translation-tools)
       #############################################################
       - name: Checkout blog-translation-tools
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       #############################################################
       # 1. CHECKOUT TARGET REPO (blog.groupdocs.com)
@@ -179,7 +179,7 @@ jobs:
 
 
       - name: Checkout Selected Blogs REPO
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           repository: ${{ env.REPO }}
           token: ${{ secrets.PAT_GITHUB_SK }}
@@ -190,7 +190,7 @@ jobs:
       # 2. SETUP PYTHON
       #############################################################
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.13"
 
