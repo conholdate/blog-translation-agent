@@ -122,6 +122,9 @@ on:
         type: number
         default: "3"   # 0 or blank means no limit
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   translate-blog-posts:
     runs-on: ubuntu-latest

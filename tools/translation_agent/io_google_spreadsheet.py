@@ -210,15 +210,29 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
 
             if key in current_lookup:
                 cur = current_lookup[key]
+                # Languages still missing across the whole post (from current scan)
                 cur_langs  = {l.strip() for l in str(cur[6]).split(",") if l.strip()}
+                # Languages this specific history row was tracking
                 hist_langs = {l.strip() for l in row[C_LANGS].split(",")  if l.strip()}
 
-                if cur_langs < hist_langs:
-                    row[C_LANGS]   = cur[6]
-                    row[C_COUNT]   = str(cur[5])
-                    row[C_STATUS]  = HISTORY_STATUS_PARTIAL
+                # Which of this row's langs are still missing?
+                remaining = hist_langs & cur_langs
+
+                if not remaining:
+                    # All langs in this row are now translated
+                    row[C_STATUS] = HISTORY_STATUS_COMPLETED
+                    row[C_DONE]   = scan_date
                     batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
+                elif remaining < hist_langs:
+                    # Some langs in this row are still missing
+                    remaining_str = ", ".join(sorted(remaining))
+                    row[C_LANGS]  = remaining_str
+                    row[C_COUNT]  = str(len(remaining))
+                    row[C_STATUS] = HISTORY_STATUS_PARTIAL
+                    batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
+                # else: remaining == hist_langs → all still missing, no change
             else:
+                # Post is completely gone from the missing list
                 row[C_STATUS] = HISTORY_STATUS_COMPLETED
                 row[C_DONE]   = scan_date
                 batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
