@@ -113,8 +113,25 @@ jobs:
       #############################################################
       - name: Run translation detection
         env:
-          TARGET_REPO: blog-checkedout-com/content/
-          GOOGLE_CREDENTIALS_JSON_SK: ${{secrets.GOOGLE_CREDENTIALS_JSON_SK}}
+          # Google Sheets — per-domain scan sheets
+          GOOGLE_CREDENTIALS_JSON_SK: ${{ secrets.GOOGLE_CREDENTIALS_JSON_SK }}
+          # Google Sheets — consolidated scan sheet
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          TRANSLATION_SCAN_SHEET_ID: ${{ secrets.TRANSLATION_SCAN_SHEET_ID }}
+          # Per-domain scan sheet IDs
+          TRANSLATION_SCAN_SHEET_ID_ASPOSE_COM: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_ASPOSE_COM }}
+          TRANSLATION_SCAN_SHEET_ID_ASPOSE_CLOUD: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_ASPOSE_CLOUD }}
+          TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_COM: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_COM }}
+          TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_CLOUD: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_CLOUD }}
+          TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_COM: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_COM }}
+          TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_CLOUD: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_CLOUD }}
+          TRANSLATION_SCAN_SHEET_ID_SUMMARY: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_SUMMARY }}
+          # Metrics
+          METRICS_WEBHOOK_URL_PROD: ${{ secrets.METRICS_WEBHOOK_URL_PROD }}
+          METRICS_TOKEN_PROD: ${{ secrets.METRICS_TOKEN_PROD }}
+          METRICS_WEBHOOK_URL_TEAM: ${{ secrets.METRICS_WEBHOOK_URL_TEAM }}
+          METRICS_TOKEN_TEAM: ${{ secrets.METRICS_TOKEN_TEAM }}
+          # LLM key (needed if --translate is triggered)
           PROFESSIONALIZE_API_KEY: ${{ secrets.PROFESSIONALIZE_API_KEY }}
         run: |
           source .venv/bin/activate
