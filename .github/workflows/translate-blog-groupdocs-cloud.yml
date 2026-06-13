@@ -231,9 +231,15 @@ jobs:
       #############################################################
       - name: Run Translator Agent
         env:
-          TARGET_REPO: blog-checkedout-com/content/
-          GOOGLE_CREDENTIALS_JSON_SK: ${{secrets.GOOGLE_CREDENTIALS_JSON_SK}}
+          GOOGLE_CREDENTIALS_JSON_SK: ${{ secrets.GOOGLE_CREDENTIALS_JSON_SK }}
+          TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_CLOUD: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_CLOUD }}
           PROFESSIONALIZE_API_KEY: ${{ secrets.PROFESSIONALIZE_API_KEY }}
+          PROFESSIONALIZE_BASE_URL: ${{ secrets.PROFESSIONALIZE_BASE_URL }}
+          PROFESSIONALIZE_LLM_MODEL: ${{ secrets.PROFESSIONALIZE_LLM_MODEL }}
+          METRICS_WEBHOOK_URL_PROD: ${{ secrets.METRICS_WEBHOOK_URL_PROD }}
+          METRICS_TOKEN_PROD: ${{ secrets.METRICS_TOKEN_PROD }}
+          METRICS_WEBHOOK_URL_TEAM: ${{ secrets.METRICS_WEBHOOK_URL_TEAM }}
+          METRICS_TOKEN_TEAM: ${{ secrets.METRICS_TOKEN_TEAM }}
 
         run: |
           source .venv/bin/activate
