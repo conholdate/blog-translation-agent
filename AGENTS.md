@@ -4,7 +4,7 @@
 This file defines the operational boundaries for all AI agents in this repository.
 Agents must not read, write, or modify any path not explicitly listed below.
 
-Last updated: 2026-05-29
+Last updated: 2026-06-14
 Authority: Shoaib Khan
 
 ---
@@ -103,4 +103,4 @@ Quality Control Agent
 - Agents must validate Google credentials before accessing any sheet
 - Metrics failures must not halt the main pipeline
 - Per-file failures must be isolated — one failure must not stop processing of remaining files
-- `PRODUCTION_ENV` in `config.py` controls whether production metrics are sent — never toggle this from agent code
+- `PRODUCTION_ENV` is auto-detected from the presence of `.env` at the project root (`True` in CI, `False` locally) — never set this manually from agent code

@@ -54,8 +54,12 @@ blog-translation-agent/
 ├── .github/
 │   ├── workflows/                  # GitHub Actions
 │   └── CODEOWNERS
+├── blog-checkedout-repo/           # Blog repo checkouts (gitignored — local + CI)
 ├── AGENTS.md                       # Agent governance policy
+├── CHANGELOG.md                    # Change history
 ├── CONTRIBUTING.md                 # Developer guide
+├── .env                            # Local secrets (gitignored — copy from .env.example)
+├── .env.example                    # Template with all required variable names
 └── pytest.ini
 ```
 
@@ -100,3 +104,12 @@ All workflows live in `.github/workflows/`. They run on a daily cron schedule an
 ## 📊 Spreadsheets
 
 Scan results, translation reports, and weekly summaries are written to Google Sheets automatically. Sheet IDs are configured in `.env` — ask the team for access to the relevant sheets.
+
+---
+
+## 🚀 Roadmap
+
+- **Unified scan dashboard** — a single consolidated sheet with one tab per domain will drive both scanning and translation, simplifying configuration and giving a cross-domain view in one place
+- **Real-time translation progress** — track each post's translation status live in the scan sheet as it moves through the pipeline, rather than reflecting it on the next scan cycle
+- **Quality sheet consolidation** — bring all six per-domain quality sheets into a single sheet with domain tabs and a unified history, matching the scan sheet architecture
+- **Prompt library** — LLM prompts extracted into versioned, readable files for easier tuning and review without touching agent code

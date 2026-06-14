@@ -60,7 +60,8 @@
 | Service | Used by | Credential |
 |---------|---------|------------|
 | LLM API (`PROFESSIONALIZE_BASE_URL`) | Translation Agent, Quality Validator, Quality Retranslator | `PROFESSIONALIZE_API_KEY` |
-| Google Sheets | Both agents | `GOOGLE_CREDENTIALS_JSON_SK` (service account JSON) |
+| Google Sheets — per-domain scan sheets | Scanner, Translator | `GOOGLE_CREDENTIALS_JSON_SK` |
+| Google Sheets — consolidated scan sheet | Scanner (`write_domain_scan_results`, `update_history_tab`) | `GOOGLE_SERVICE_ACCOUNT_JSON` |
 | GitHub (6 blog repos) | `git_repo_utils.py` | `PAT_GITHUB_SK` |
 | Google Apps Script webhooks (2) | `utils.py` | `METRICS_TOKEN_TEAM`, `METRICS_TOKEN_PROD` |
 

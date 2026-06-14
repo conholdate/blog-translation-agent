@@ -5,27 +5,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
-## [Unreleased]
+## [2026-06-14]
 
 ### Added
-- Consolidated Google Sheet (`TRANSLATION_SCAN_SHEET_ID`) replacing 6 per-domain scan sheets — one sheet, one tab per domain
+- Consolidated Google Sheet (`TRANSLATION_SCAN_SHEET_ID`) — one sheet, one tab per domain, replacing 6 separate per-domain scan sheets
 - Per-domain worksheet tabs overwritten on each scan with Scan Date as first column (ISO 8601 with timezone)
-- `history` tab: append-only cross-domain log tracking every missing translation with Status (`pending` / `partial` / `completed`) and Completed Date — filled automatically on the scan that detects a translation was finished
-- `write_domain_scan_results()` and `update_history_tab()` in `io_google_spreadsheet.py`
-- `_auto_resize_columns()` — auto-fits all column widths after every sheet write
+- `history` tab: append-only cross-domain log with Status (`pending` / `partial` / `completed`) and Completed Date
+- `write_domain_scan_results()`, `update_history_tab()`, `_auto_resize_columns()` in `io_google_spreadsheet.py`
 - `GOOGLE_SERVICE_ACCOUNT_JSON` and `TRANSLATION_SCAN_SHEET_ID` config vars
-- `.env.example` at project root — committed template listing all required variables
+- `.env.example` at project root — committed template listing all 25+ required variables
+- `CHANGELOG.md` — this file
 
 ### Changed
-- `.env` moved from `tools/translation_agent/` to project root
+- `.env` moved from `tools/translation_agent/` to project root; `load_dotenv()` updated with explicit path using `os.path.abspath(__file__)` to work reliably across Python versions and run locations
+- `PRODUCTION_ENV` is now auto-detected: `True` in CI (no `.env` file present), `False` locally — no longer hardcoded
 - `requirements.txt` consolidated to project root; `tools/translation_agent/requirements.txt` removed
-- `tools/translation_agent/.venv` removed; root `.venv` is the single virtual environment
-- `requirements.lock` regenerated from root `requirements.txt` for Python 3.9
-- All 8 CI workflows now install from `requirements.lock` instead of the unpinned subfolder file
+- `tools/translation_agent/.venv` removed; root `.venv` is the single virtual environment (Python 3.13)
+- `requirements.lock` regenerated from root `requirements.txt` for Python 3.13
+- All 8 CI workflows now install from `requirements.lock`; upgraded to `actions/checkout@v5`, `actions/setup-python@v5`; added `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true` for Node.js 24 compatibility
+- All translate workflows now pass all required secrets (`TRANSLATION_SCAN_SHEET_ID_*`, `PROFESSIONALIZE_*`, `METRICS_*`) via `env:` blocks
+- `blog-checkedout-repo/` moved from `tools/translation_agent/` to project root — aligns local layout with CI checkout path
 - `pytest==8.4.2` added as an explicit direct dependency in `requirements.txt`
+- API key masked as `***` in scanner args log; sheet URLs removed from success print statements
+- Removed 14 hardcoded Google Sheet URLs from `README.md`
 
 ### Fixed
-- Python 3.9 syntax error in `translator.py` — backslash escape inside f-string `{}` (4 occurrences); replaced with `chr(10)`
+- History tab completion detection: replaced subset check (`cur_langs < hist_langs`) with intersection logic (`hist_langs & cur_langs`) — correctly handles multiple history rows sharing the same slug with different language sets
+- `current_date` / `scan_date` initialized before the domain loop in scanner — prevents `UnboundLocalError` when a domain path does not exist
+- Python 3.9 syntax error in `translator.py` — backslash inside f-string `{}` invalid in 3.9; replaced with `chr(10)` in 4 print statements
+- `io_google_spreadsheet.py` init message changed from "GitHub Secret" to "GSheets client initialized" — removed misleading wording
+
+### Security
+- Removed all hardcoded Google Sheet URLs from `README.md`
+- Masked `PROFESSIONALIZE_API_KEY` in terminal output (`***`)
+- Sheet write URLs no longer printed to stdout/CI logs
 
 ---
 

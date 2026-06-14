@@ -68,6 +68,37 @@ start_translation(domain, author, limit)
 
 ---
 
+## Consolidated Scan Sheet
+
+The scanner writes to two places on every run:
+
+**1. Per-domain tab** (`TRANSLATION_SCAN_SHEET_ID` — tab named by domain)
+- Cleared and rewritten on each scan — always shows current missing translations only
+- Columns: Scan Date, Domain, Product, Blog Post Directory, Blog Post URL, Author, Missing Count, Missing Translations, Extra Translations, Status
+
+**2. History tab** (append-only, never cleared)
+- One row per blog post per detection event, keyed by `(domain, slug)`
+- Status lifecycle: `pending` → `partial` → `completed`
+
+### History Tab — Completion Detection
+
+On each scan, `update_history_tab()` checks every pending history row against the current scan results:
+
+```
+remaining = this_row_langs ∩ current_missing_langs
+```
+
+| `remaining` | Meaning | Action |
+|-------------|---------|--------|
+| empty | All langs in this row are translated | `completed` + Completed Date = scan_date |
+| `remaining < this_row_langs` | Some langs translated, some still missing | `partial` + langs updated to remaining |
+| `remaining == this_row_langs` | Nothing changed | no update |
+| post not in scan at all | Entire post fully translated | `completed` + Completed Date = scan_date |
+
+**Note:** Completion is detected on the **next scan after** the translation is committed — the scanner must re-run with the updated blog repo to detect completion.
+
+---
+
 ## Quality Control Agent
 
 ### Entry Point (3 phases, run in order)
@@ -145,7 +176,7 @@ retranslate_domain(domain, threshold, limit)
 | File | Change |
 |------|--------|
 | `tools/translation_agent/config.py` | Add `DOMAIN_*` constant, `LANGS_*` string, `SHEET_ID_*`, `QUALITY_SHEET_ID_*`, entry in `domains_data` |
-| `tools/translation_agent/.env` | Add `TRANSLATION_SCAN_SHEET_ID_*` and `QUALITY_SHEET_ID_*` values |
+| `.env` (project root) | Add `TRANSLATION_SCAN_SHEET_ID_*` and `QUALITY_SHEET_ID_*` values |
 | `tools/translation_agent/git_repo_utils.py` | Add repo entry to the `repos` list |
 | `tools/quality_agent/quality_scanner.py` | Add entry to `QUALITY_SHEET_IDS` |
 | `tools/quality_agent/quality_validator.py` | Add entry to `QUALITY_SHEET_IDS` |
