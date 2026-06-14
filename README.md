@@ -1,16 +1,19 @@
-# Blog Translation Agents
+# Blog Translation Agent
 
-Two automated agents that keep blog translations complete, consistent, and high quality across all six domains.
+An AI-powered agent that keeps blog translations complete, accurate, and high quality across all six domains — automatically.
 
 ---
 
-## Agents
+## What It Does
 
-### 1. Blog Translation Agent
-Scans blog repositories daily for missing translations and automatically translates blog posts into 22 languages. See [tools/translation_agent/README.md](tools/translation_agent/README.md) for full documentation.
+The agent runs a four-step pipeline:
 
-### 2. Blog Translation Quality Control Agent
-Scans all existing translated files, scores their translation quality using a heuristic pass followed by AI analysis, and force-retranslates any file whose score exceeds a set threshold. See [tools/quality_agent/README.md](tools/quality_agent/README.md) for full documentation.
+| Step | What it does |
+|------|-------------|
+| **1. Scan** | Walks all blog repositories daily, detects every post missing a translated version, and reports results to Google Sheets |
+| **2. Translate** | Reads the scan results and fills in missing translations using an LLM — preserving formatting, code blocks, and front matter |
+| **3. Quality Check** | Scores all existing translations for accuracy using a heuristic pass followed by AI analysis |
+| **4. Retranslate** | Automatically re-translates any post whose quality score falls below the configured threshold |
 
 ---
 
@@ -27,12 +30,18 @@ Scans all existing translated files, scores their translation quality using a he
 
 ---
 
+## Supported Languages
+
+22 languages: `ar` `cs` `de` `es` `fa` `fr` `he` `id` `it` `ja` `ko` `nl` `pl` `pt` `ru` `sv` `th` `tr` `uk` `vi` `zh` `zh-hant`
+
+---
+
 ## Project Structure
 
 ```
 blog-translation-agent/
 ├── tools/
-│   ├── translation_agent/          # Blog Translation Agent
+│   ├── translation_agent/          # Steps 1 & 2 — Scan + Translate
 │   │   ├── translator.py
 │   │   ├── scan_missing_translations.py
 │   │   ├── git_repo_utils.py
@@ -41,7 +50,7 @@ blog-translation-agent/
 │   │   ├── config.py
 │   │   ├── tests/
 │   │   └── README.md
-│   └── quality_agent/              # Blog Translation Quality Control Agent
+│   └── quality_agent/              # Steps 3 & 4 — Quality Check + Retranslate
 │       ├── quality_scanner.py
 │       ├── quality_validator.py
 │       ├── quality_retranslator.py
@@ -50,7 +59,7 @@ blog-translation-agent/
 │       └── README.md
 ├── docs/
 │   ├── ARCHITECTURE.md             # System overview and component map
-│   └── ORCHESTRATION.md            # State model, control flow, extension points
+│   └── ORCHESTRATION.md            # Pipeline steps, state models, extension points
 ├── .github/
 │   ├── workflows/                  # GitHub Actions
 │   └── CODEOWNERS
@@ -81,7 +90,7 @@ Key variables:
 | `METRICS_WEBHOOK_URL_PROD` / `METRICS_TOKEN_PROD` | Production metrics webhook |
 | `METRICS_WEBHOOK_URL_TEAM` / `METRICS_TOKEN_TEAM` | Team metrics webhook |
 
-For the full list of all 34 variables see [.env.example](.env.example).
+For the full list of all variables see [.env.example](.env.example).
 
 ---
 
@@ -103,7 +112,7 @@ All workflows live in `.github/workflows/`. They run on a daily cron schedule an
 
 ## 📊 Spreadsheets
 
-Scan results, translation reports, and weekly summaries are written to Google Sheets automatically. Sheet IDs are configured in `.env` — ask the team for access to the relevant sheets.
+Scan results, translation reports, and quality scores are written to Google Sheets automatically. Sheet IDs are configured in `.env` — ask the team for access to the relevant sheets.
 
 ---
 

@@ -1,25 +1,24 @@
-# Blogs Translation Quality Control Agent
+# Quality Pipeline — Steps 3 & 4
 
-A three-phase pipeline that scans all existing translated blog posts, scores their translation quality using AI, and retranslates the poor-quality ones — ensuring every language version is genuinely translated and not just a copy of the English original.
+This directory implements the last two steps of the **Blog Translation Agent**: checking the quality of all existing translations and retranslating any that fall below the threshold — ensuring every language version is genuinely translated and not just a copy of the English original.
 
 ---
 
 ## Overview
 
-The Quality Control Agent adds three automated phases on top of the existing Blog Translation Agent:
+| Step | Script(s) | What it does |
+|------|-----------|--------------|
+| **3 — Quality Check** | `quality_scanner.py` → `quality_validator.py` | Traverses all repos, computes a heuristic Error% per file (Phase A), then AI-validates flagged files (Phase B) — writes results to Google Sheets |
+| **4 — Retranslate** | `quality_retranslator.py` | Reads the quality sheet, force-retranslates files with AI Error% above the threshold via the Step 2 pipeline |
 
-| Phase | Script | What it does |
-|-------|--------|--------------|
-| 1 | `quality_scanner.py` | Traverses all repos, computes a heuristic Error% per file, writes results to Google Sheets |
-| 2 | `quality_validator.py` | Reads the sheet, sends files to an LLM for AI-based Error% scoring, back-fills the sheet |
-| 3 | `quality_retranslator.py` | Reads the sheet, force-retranslates files with AI Error% above a threshold |
+Steps 1 & 2 (Scan and Translate) live in `tools/translation_agent/`. See the [root README](../../README.md) for the full pipeline.
 
 ---
 
 ## Prerequisites
 
 - Python 3.13+
-- Root `.venv` from the project root (shared with the Translation Agent)
+- Root `.venv` from the project root (shared across all pipeline steps)
 - `.env` at the project root with all required variables
 - API key for the translation/LLM service
 
@@ -27,7 +26,7 @@ The Quality Control Agent adds three automated phases on top of the existing Blo
 
 ## Installation
 
-No additional dependencies. The quality agent shares `requirements.lock`, `.venv`, and `.env` with the translation agent — all at the project root.
+No additional dependencies. All pipeline steps share the same `requirements.lock`, `.venv`, and `.env` at the project root.
 
 ```bash
 cd blog-post-translator
@@ -47,7 +46,7 @@ cp .env.example .env          # then fill in values
 
 ## Environment Variables
 
-The quality agent shares `config.py` and `.env` (at the project root) with the translation agent. All variables are listed in [.env.example](../../.env.example).
+All pipeline steps share `config.py` and `.env` at the project root. All variables are listed in [.env.example](../../.env.example).
 
 The key variables used by the quality agent are:
 
@@ -72,11 +71,11 @@ The key variables used by the quality agent are:
 
 ```
 tools/
-├── translation_agent/          # Blog Translation Agent
-└── quality_agent/              # Quality Control Agent
-    ├── quality_scanner.py      # Phase 1 — heuristic scan
-    ├── quality_validator.py    # Phase 2 — AI validation
-    ├── quality_retranslator.py # Phase 3 — retranslation
+├── translation_agent/          # Steps 1 & 2 — Scan + Translate
+└── quality_agent/              # Steps 3 & 4 — Quality Check + Retranslate
+    ├── quality_scanner.py      # Step 3, Phase A — heuristic scan
+    ├── quality_validator.py    # Step 3, Phase B — AI validation
+    ├── quality_retranslator.py # Step 4 — retranslation
     ├── lang_guard.py           # Language utility functions
     └── tests/                  # Unit tests
 ```
@@ -111,7 +110,7 @@ Sheet IDs are loaded from environment variables (`QUALITY_SHEET_ID_*`) via `conf
 
 ---
 
-## Phase 1 — Quality Scanner
+## Step 3, Phase A — Quality Scanner
 
 Traverses all local blog repositories, finds every `index.{lang}.md` file, computes a heuristic Error% by comparing paragraph word sets against the English original, and writes one row per translated file to the domain's quality sheet sorted by Error% descending.
 
@@ -135,7 +134,7 @@ python quality_scanner.py --domain all --key sk-xxxxxxxxx
 
 ---
 
-## Phase 2 — Quality Validator
+## Step 3, Phase B — Quality Validator
 
 Reads the quality sheet and AI-validates translations not yet analysed:
 
@@ -167,9 +166,9 @@ python quality_validator.py --domain all --limit 50 --key sk-xxxxxxxxx
 
 ---
 
-## Phase 3 — Quality Retranslator
+## Step 4 — Quality Retranslator
 
-Reads the quality sheet and force-retranslates files where `Error% AI > threshold` and `Status` is blank. Uses the existing `TranslationOrchestrator` from the Blog Translation Agent — no changes to the original translator required.
+Reads the quality sheet and force-retranslates files where `Error% AI > threshold` and `Status` is blank. Uses the `TranslationOrchestrator` from Step 2 — no changes to the original translator required.
 
 After retranslation, sets `Status = Fixed` and updates `Analysed At`. The validator automatically picks up `Status = Fixed` rows on its next run to fill `Error% after Fix`.
 
@@ -194,21 +193,21 @@ python quality_retranslator.py --domain blog.aspose.com --threshold 50 --limit 1
 
 ---
 
-## Full Pipeline
+## Full Quality Pipeline (Steps 3 & 4)
 
-Run the phases in order. Each phase can also be scheduled independently.
+Run in order. Each script can also be scheduled independently.
 
 ```bash
-# Phase 1 — Scan all domains
+# Step 3, Phase A — Scan all domains (heuristic)
 python quality_scanner.py --domain all --key sk-xxxxxxxxx
 
-# Phase 2 — AI-validate results
+# Step 3, Phase B — AI-validate results
 python quality_validator.py --domain all --key sk-xxxxxxxxx
 
-# Phase 3 — Retranslate poor-quality files
+# Step 4 — Retranslate poor-quality files
 python quality_retranslator.py --domain all --key sk-xxxxxxxxx
 
-# Phase 2 again — re-check fixed rows, fill Error% after Fix
+# Step 3, Phase B again — re-check fixed rows, fill Error% after Fix
 python quality_validator.py --domain all --key sk-xxxxxxxxx
 ```
 

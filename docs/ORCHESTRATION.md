@@ -1,10 +1,41 @@
 # Orchestration
 
-State model, control flow, and extension points for both agent families.
+State model, control flow, and extension points for all four pipeline steps of the Blog Translation Agent.
 
 ---
 
-## Translation Agent
+## Step 1 — Scan: Consolidated Scan Sheet
+
+The scanner writes to two places on every run:
+
+**1. Per-domain tab** (`TRANSLATION_SCAN_SHEET_ID` — tab named by domain)
+- Cleared and rewritten on each scan — always shows current missing translations only
+- Columns: Scan Date, Domain, Product, Blog Post Directory, Blog Post URL, Author, Missing Count, Missing Translations, Extra Translations, Status
+
+**2. History tab** (append-only, never cleared)
+- One row per blog post per detection event, keyed by `(domain, slug)`
+- Status lifecycle: `pending` → `partial` → `completed`
+
+### History Tab — Completion Detection
+
+On each scan, `update_history_tab()` checks every pending history row against the current scan results:
+
+```
+remaining = this_row_langs ∩ current_missing_langs
+```
+
+| `remaining` | Meaning | Action |
+|-------------|---------|--------|
+| empty | All langs in this row are translated | `completed` + Completed Date = scan_date |
+| `remaining < this_row_langs` | Some langs translated, some still missing | `partial` + langs updated to remaining |
+| `remaining == this_row_langs` | Nothing changed | no update |
+| post not in scan at all | Entire post fully translated | `completed` + Completed Date = scan_date |
+
+**Note:** Completion is detected on the **next scan after** the translation is committed — the scanner must re-run with the updated blog repo to detect completion.
+
+---
+
+## Step 2 — Translate
 
 ### Entry Point
 
@@ -12,7 +43,7 @@ State model, control flow, and extension points for both agent families.
 translator.py  →  start_translation()  →  filter_valid_rows()  →  TranslationOrchestrator.translate_files()
 ```
 
-### State Model
+### State Model (Step 2)
 
 | State | Description |
 |-------|-------------|
@@ -23,7 +54,7 @@ translator.py  →  start_translation()  →  filter_valid_rows()  →  Translat
 | **Skipped** | `index.{lang}.md` already exists on disk — no LLM call made |
 | **Failed** | Exception during translation — error logged, remaining langs continue |
 
-### Control Flow
+### Control Flow (Step 2)
 
 ```
 start_translation(domain, author, limit)
@@ -59,7 +90,7 @@ start_translation(domain, author, limit)
             └── send_metrics()
 ```
 
-### Retry Logic
+### Retry Logic (Step 2)
 
 `ContentTranslatorAgent._translate_content_chunk()` retries up to **3 times** per chunk:
 1. First attempt — standard prompt
@@ -68,60 +99,29 @@ start_translation(domain, author, limit)
 
 ---
 
-## Consolidated Scan Sheet
+## Steps 3 & 4 — Quality Check & Retranslate
 
-The scanner writes to two places on every run:
-
-**1. Per-domain tab** (`TRANSLATION_SCAN_SHEET_ID` — tab named by domain)
-- Cleared and rewritten on each scan — always shows current missing translations only
-- Columns: Scan Date, Domain, Product, Blog Post Directory, Blog Post URL, Author, Missing Count, Missing Translations, Extra Translations, Status
-
-**2. History tab** (append-only, never cleared)
-- One row per blog post per detection event, keyed by `(domain, slug)`
-- Status lifecycle: `pending` → `partial` → `completed`
-
-### History Tab — Completion Detection
-
-On each scan, `update_history_tab()` checks every pending history row against the current scan results:
+### Entry Point (run in order)
 
 ```
-remaining = this_row_langs ∩ current_missing_langs
+quality_scanner.py      →  Step 3, Phase A: heuristic scan
+quality_validator.py    →  Step 3, Phase B: AI validation
+quality_retranslator.py →  Step 4: retranslation
 ```
 
-| `remaining` | Meaning | Action |
-|-------------|---------|--------|
-| empty | All langs in this row are translated | `completed` + Completed Date = scan_date |
-| `remaining < this_row_langs` | Some langs translated, some still missing | `partial` + langs updated to remaining |
-| `remaining == this_row_langs` | Nothing changed | no update |
-| post not in scan at all | Entire post fully translated | `completed` + Completed Date = scan_date |
-
-**Note:** Completion is detected on the **next scan after** the translation is committed — the scanner must re-run with the updated blog repo to detect completion.
-
----
-
-## Quality Control Agent
-
-### Entry Point (3 phases, run in order)
-
-```
-quality_scanner.py    →  Phase 1: heuristic scan
-quality_validator.py  →  Phase 2: AI validation
-quality_retranslator.py →  Phase 3: retranslation
-```
-
-Re-run Phase 2 after Phase 3 to fill the `Error% after Fix` column.
+Re-run Step 3 Phase B after Step 4 to fill the `Error% after Fix` column.
 
 ### State Model (per sheet row)
 
 | Column state | Meaning |
 |---|---|
-| `Error% Heuristic` filled, `Error% AI` blank | Phase 1 complete, Phase 2 pending |
+| `Error% Heuristic` filled, `Error% AI` blank | Step 3 Phase A complete, Phase B pending |
 | `Error% AI` = `NA` | Heuristic was 0% — file is fully translated, no LLM cost incurred |
-| `Error% AI` filled, `Status` blank | Phase 2 complete, Phase 3 pending |
-| `Status` = `Fixed` | Phase 3 complete, re-run Phase 2 to fill `Error% after Fix` |
-| `Error% after Fix` filled | Full cycle complete |
+| `Error% AI` filled, `Status` blank | Step 3 complete, Step 4 pending |
+| `Status` = `Fixed` | Step 4 complete — re-run Step 3 Phase B to fill `Error% after Fix` |
+| `Error% after Fix` filled | Full quality cycle complete |
 
-### Control Flow — Phase 1 (Scanner)
+### Control Flow — Step 3, Phase A (Scanner)
 
 ```
 scan_domain(domain)
@@ -137,7 +137,7 @@ scan_domain(domain)
         (sorted by Error% Heuristic descending)
 ```
 
-### Control Flow — Phase 2 (Validator)
+### Control Flow — Step 3, Phase B (Validator)
 
 ```
 validate_domain(domain, limit)
@@ -156,7 +156,7 @@ validate_domain(domain, limit)
 └── re-sort sheet by Error% AI descending
 ```
 
-### Control Flow — Phase 3 (Retranslator)
+### Control Flow — Step 4 (Retranslator)
 
 ```
 retranslate_domain(domain, threshold, limit)

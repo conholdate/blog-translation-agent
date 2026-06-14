@@ -1,45 +1,48 @@
-# Blogs Translation Agent
+# Translation Pipeline — Steps 1 & 2
 
-Automated translation system for blog posts across multiple domains and languages with daily scanning and quality validation.
-
----
-
-## 🎯 Overview
-
-A two-part automation system that:
-1. **Scans** blog repositories daily for missing translations
-2. **Translates** blog posts into 20+ languages with AI-powered quality checks
+This directory implements the first two steps of the **Blog Translation Agent**: scanning blog repositories for missing translations and filling them in with AI-powered translation.
 
 ---
 
-## ✨ Features
+## Overview
 
-- ✅ **Automated Daily Scanning** - Detects missing translations across all domains
-- ✅ **Smart Translation** - AI-powered with retry logic and quality validation
-- ✅ **Format Preservation** - Maintains markdown formatting, code blocks, and links
-- ✅ **Front-matter Protection** - Never translates product names or critical metadata
-- ✅ **Multi-domain Support** - Works across 6 blog domains
-- ✅ **22 Languages** - Comprehensive language coverage
-- ✅ **GitHub Actions Integration** - Automated daily workflows
+| Step | Script | What it does |
+|------|--------|--------------|
+| **1 — Scan** | `scan_missing_translations.py` | Walks all blog repositories, detects every post missing a translated version, writes results to Google Sheets |
+| **2 — Translate** | `translator.py` | Reads the scan results and fills in missing translations using an LLM — preserving formatting, code blocks, and front matter |
+
+Steps 3 & 4 (Quality Check and Retranslate) live in `tools/quality_agent/`. See the [root README](../../README.md) for the full pipeline.
 
 ---
 
-## 📋 Prerequisites
+## Features
+
+- Automated daily scanning — detects missing translations across all domains
+- AI-powered translation with retry logic and quality validation
+- Format preservation — maintains Markdown formatting, code blocks, and links
+- Front-matter protection — never translates product names or critical metadata
+- Multi-domain support — works across 6 blog domains
+- 22 languages
+- GitHub Actions integration — automated daily workflows
+
+---
+
+## Prerequisites
 
 - Python 3.13+
 - API key for translation service (Professionalize LLM)
 - Google Sheets API credentials (for scanning reports)
-- GitHub/GitLab access tokens (for repository operations)
+- GitHub access token (for repository operations)
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### 1. Clone Repository
 
 ```bash
-git clone https://gitlab.recruitize.ai/sialkot/lahore-aspose/lahore-blogs-team/blog-post-translator.git
-cd blog-post-translator
+git clone <repo-url>
+cd blog-translation-agent
 ```
 
 ### 2. Create Virtual Environment
@@ -58,7 +61,7 @@ pip install -r requirements.lock
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 Create `.env` at the **project root** (copy from `.env.example`) with the variables below. In GitHub Actions these are stored as repository secrets. `config.py` loads this file automatically via `python-dotenv`.
 
@@ -105,31 +108,29 @@ TRANSLATION_SCAN_SHEET_ID_TEST_QA=
 
 ---
 
-## 📖 Usage
+## Usage
 
-### Part 1: Scan for Missing Translations
+### Step 1: Scan for Missing Translations
 
-Scans blog repositories and generates reports in Google Sheets.
+Scans blog repositories and writes results to Google Sheets.
 
 ```bash
 python tools/translation_agent/scan_missing_translations.py --domain <DOMAIN>
 ```
 
 **Options:**
-- `--domain` (required) - Target domain or "all"
+- `--domain` (required) — Target domain or `all`
 
 **Example:**
 ```bash
-python tools/translation_agent/scan_missing_translations.py \
-  --domain blog.aspose.com \
-  --key sk-xxxxxxxxx
+python tools/translation_agent/scan_missing_translations.py --domain blog.aspose.com
 ```
 
 ---
 
-### Part 2: Translate Blog Posts
+### Step 2: Translate Blog Posts
 
-Translates blog posts into missing languages.
+Reads the scan sheet and translates posts into missing languages.
 
 ```bash
 python tools/translation_agent/translator.py \
@@ -141,17 +142,17 @@ python tools/translation_agent/translator.py \
 ```
 
 **Required Parameters:**
-- `--domain` - Target blog domain
-- `--key` - API key (sk-xxxxxxxxx)
+- `--domain` — Target blog domain
+- `--key` — API key (sk-xxxxxxxxx)
 
 **Optional Parameters:**
-- `--product` - Specific product (e.g., email, cells, conversion)
-- `--author` - Author name (e.g., "Muhammad Mustafa")
-- `--limit` - Number of posts to translate
+- `--product` — Specific product (e.g., email, cells, conversion)
+- `--author` — Author name (e.g., "Muhammad Mustafa")
+- `--limit` — Number of posts to translate
 
 ---
 
-## 🌍 Supported Domains
+## Supported Domains
 
 - `blog.aspose.com`
 - `blog.groupdocs.com`
@@ -162,9 +163,7 @@ python tools/translation_agent/translator.py \
 
 ---
 
-## 🗣️ Languages
-
-This supports translation into all languages and its output is tested on the following languages:
+## Supported Languages
 
 ```
 ar (Arabic)         | cs (Czech)       | de (German)      | es (Spanish)
@@ -179,9 +178,9 @@ zh (Chinese)        | zh-hant (Chinese Traditional)
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
-### Components
+### File Structure
 
 ```
 tools/translation_agent/
@@ -194,7 +193,7 @@ tools/translation_agent/
 └── tests/
 ```
 
-### Translation Agents
+### Internal Agents
 
 **TranslationOrchestrator**
 - Coordinates the full translation workflow and token tracking
@@ -214,15 +213,15 @@ tools/translation_agent/
 - Identifies the programming platform (.NET, Java, Python, …)
 - Provides platform context to improve translation accuracy
 
-For full control flow and state model see [docs/ORCHESTRATION.md](../../docs/ORCHESTRATION.md).
+For the full control flow and state model see [docs/ORCHESTRATION.md](../../docs/ORCHESTRATION.md).
 
 ---
 
-## 🤖 GitHub Actions
+## GitHub Actions
 
 ### Daily Scan Workflow
 
-Runs automatically at 01:00 UTC daily.
+Runs automatically at 00:00 UTC daily.
 
 **File:** `.github/workflows/scan-missing-translations.yml`
 
@@ -230,21 +229,17 @@ Runs automatically at 01:00 UTC daily.
 
 **Matrix:** Runs for all 6 domains in parallel
 
-### Manual Translation Workflow
+### Translation Workflows
 
-Trigger manually via GitHub Actions UI.
+Run automatically at 01:00 UTC daily, one workflow per domain.
 
-**File:** `.github/workflows/translate-blogs.yml`
+**Files:** `.github/workflows/translate-blog-*.yml`
 
-**Inputs:**
-- Domain (dropdown)
-- Product (dropdown, optional)
-- Author (text, optional)
-- Limit (number, optional)
+**Trigger:** Scheduled (cron) or manual dispatch
 
 ---
 
-## 📊 Reports
+## Reports
 
 Scan results are automatically saved to Google Sheets with:
 - Domain
@@ -260,7 +255,7 @@ Scan results are automatically saved to Google Sheets with:
 
 ---
 
-## 🔒 Security
+## Security
 
 - **API Keys:** Store in GitHub Secrets or environment variables
 - **Google Credentials:** Use service account with minimal permissions
@@ -269,28 +264,19 @@ Scan results are automatically saved to Google Sheets with:
 
 ---
 
-## 🐛 Troubleshooting
+## Troubleshooting
 
-### Translation Fails
+**Translation fails with `401 Authentication Error`**
+Verify API key is valid and active.
 
-**Issue:** `401 Authentication Error`
-- **Solution:** Verify API key is valid and active
+**Translation returns untranslated content**
+The agent retries up to 3 times per chunk with enhanced prompts.
 
-**Issue:** Translation returns untranslated content
-- **Solution:** Tool automatically retries up to 3 times with enhanced prompts
+**`Spreadsheet not found`**
+Check Google credentials and sheet permissions.
 
-### Scan Fails
-
-**Issue:** `Spreadsheet not found`
-- **Solution:** Check Google credentials and sheet permissions
-
-**Issue:** Repository not accessible
-- **Solution:** Verify GitHub/GitLab token has correct permissions
-
-### Common Errors
+**Repository not accessible**
+Verify GitHub token has correct permissions.
 
 **Code blocks not preserved**
-- Tool automatically detects and skips translation validation for code blocks
-- If issues persist, check markdown formatting
-
----
+The agent automatically detects and skips translation validation for code blocks. If issues persist, check Markdown formatting.

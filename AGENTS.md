@@ -1,23 +1,27 @@
 # AGENTS.md
-# Blog Translation Agents — Governance Policy
+# Blog Translation Agent — Governance Policy
 
-This file defines the operational boundaries for all AI agents in this repository.
-Agents must not read, write, or modify any path not explicitly listed below.
+This file defines the operational boundaries for the Blog Translation Agent and its pipeline components.
+The agent must not read, write, or modify any path not explicitly listed below.
 
 Last updated: 2026-06-14
 Authority: Shoaib Khan
 
 ---
 
-## Agents
+## Agent
 
-### 1. Blog Translation Agent
-**Entry point:** `tools/translation_agent/translator.py`
-**Purpose:** Scans blog repositories for missing translations and produces translated Markdown files.
+### Blog Translation Agent
 
-### 2. Blog Translation Quality Control Agent
-**Entry point:** `tools/quality_agent/quality_scanner.py` → `quality_validator.py` → `quality_retranslator.py`
-**Purpose:** Scores translation quality and force-retranslates files above the error threshold.
+One agent. Four pipeline steps. Two implementation directories.
+
+**Translation Pipeline (Steps 1 & 2)**
+- Step 1 — Scan: `tools/translation_agent/scan_missing_translations.py`
+- Step 2 — Translate: `tools/translation_agent/translator.py`
+
+**Quality Pipeline (Steps 3 & 4)**
+- Step 3 — Quality Check: `tools/quality_agent/quality_scanner.py` → `quality_validator.py`
+- Step 4 — Retranslate: `tools/quality_agent/quality_retranslator.py`
 
 ---
 
@@ -25,24 +29,24 @@ Authority: Shoaib Khan
 
 | Path | Used by |
 |------|---------|
-| `tools/translation_agent/` | Translation Agent |
-| `tools/quality_agent/` | Quality Agent |
-| `blog-checkedout-repo/content/` | Both agents (read originals and existing translations) |
+| `tools/translation_agent/` | Translation Pipeline (Steps 1 & 2) |
+| `tools/quality_agent/` | Quality Pipeline (Steps 3 & 4) |
+| `blog-checkedout-repo/content/` | All pipeline steps (read originals and existing translations) |
 | `.github/workflows/` | CI reference only |
 
 ---
 
 ## Allowed Write Paths
 
-| Path | Agent | What is written |
-|------|-------|-----------------|
-| `blog-checkedout-repo/content/Aspose.Blog/**` | Translation Agent, Quality Retranslator | `index.{lang}.md` translated files |
-| `blog-checkedout-repo/content/Groupdocs.Blog/**` | Translation Agent, Quality Retranslator | `index.{lang}.md` translated files |
-| `blog-checkedout-repo/content/Conholdate.Total/**` | Translation Agent, Quality Retranslator | `index.{lang}.md` translated files |
-| `blog-checkedout-repo/content/Aspose.Cloud/**` | Translation Agent, Quality Retranslator | `index.{lang}.md` translated files |
-| `blog-checkedout-repo/content/GroupDocs.Cloud/**` | Translation Agent, Quality Retranslator | `index.{lang}.md` translated files |
-| `blog-checkedout-repo/content/Conholdate.Cloud/**` | Translation Agent, Quality Retranslator | `index.{lang}.md` translated files |
-| Google Sheets (via API) | Both agents | Metrics, scan results, quality scores |
+| Path | Step | What is written |
+|------|------|-----------------|
+| `blog-checkedout-repo/content/Aspose.Blog/**` | Step 2 (Translate), Step 4 (Retranslate) | `index.{lang}.md` translated files |
+| `blog-checkedout-repo/content/Groupdocs.Blog/**` | Step 2 (Translate), Step 4 (Retranslate) | `index.{lang}.md` translated files |
+| `blog-checkedout-repo/content/Conholdate.Total/**` | Step 2 (Translate), Step 4 (Retranslate) | `index.{lang}.md` translated files |
+| `blog-checkedout-repo/content/Aspose.Cloud/**` | Step 2 (Translate), Step 4 (Retranslate) | `index.{lang}.md` translated files |
+| `blog-checkedout-repo/content/GroupDocs.Cloud/**` | Step 2 (Translate), Step 4 (Retranslate) | `index.{lang}.md` translated files |
+| `blog-checkedout-repo/content/Conholdate.Cloud/**` | Step 2 (Translate), Step 4 (Retranslate) | `index.{lang}.md` translated files |
+| Google Sheets (via API) | All steps | Metrics, scan results, quality scores |
 
 ---
 
@@ -69,27 +73,32 @@ Authority: Shoaib Khan
 ## Pipeline Steps
 
 ```
-Translation Agent
-  1. Read missing translations from Google Sheets
-  2. Checkout target blog repo (read-only except content/)
-  3. Translate English index.md → index.{lang}.md
-  4. Write translated file to blog-checkedout-repo/content/...
-  5. Send metrics to Google Sheets
-
-Quality Control Agent
-  Phase 1 — Scanner
+Blog Translation Agent
+  Step 1 — Scan
     1. Walk blog-checkedout-repo/content/ (read-only)
-    2. Compute heuristic Error% per translated file
-    3. Write results to quality Google Sheet
+    2. Detect every post missing a translated version
+    3. Write results to Google Sheets
 
-  Phase 2 — Validator
-    1. Read quality sheet rows
-    2. Run AI-based error% check on flagged files (read-only on files)
-    3. Update Error% AI and Analysed At cells in sheet
+  Step 2 — Translate
+    1. Read missing translations from Google Sheets
+    2. Checkout target blog repo (read-only except content/)
+    3. Translate English index.md → index.{lang}.md
+    4. Write translated file to blog-checkedout-repo/content/...
+    5. Send metrics to Google Sheets
 
-  Phase 3 — Retranslator
+  Step 3 — Quality Check
+    Phase A — Scanner
+      1. Walk blog-checkedout-repo/content/ (read-only)
+      2. Compute heuristic Error% per translated file
+      3. Write results to quality Google Sheet
+    Phase B — Validator
+      1. Read quality sheet rows
+      2. Run AI-based Error% check on flagged files (read-only on files)
+      3. Update Error% AI and Analysed At cells in sheet
+
+  Step 4 — Retranslate
     1. Read quality sheet for files above error threshold
-    2. Re-translate file via Translation Agent pipeline
+    2. Re-translate file via Step 2 pipeline
     3. Write corrected index.{lang}.md to blog-checkedout-repo/content/...
     4. Update Status and Analysed At cells in sheet
 ```

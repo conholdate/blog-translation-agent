@@ -4,33 +4,39 @@
 
 ## System Overview
 
+One agent. Four pipeline steps. Two implementation directories.
+
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                     Blog Translation Agents                     │
-│                                                                 │
-│  ┌──────────────────────────┐  ┌──────────────────────────────┐ │
-│  │   Translation Agent      │  │  Quality Control Agent       │ │
-│  │                          │  │                              │ │
-│  │  scan_missing_           │  │  quality_scanner.py  (Ph.1)  │ │
-│  │    translations.py       │  │  quality_validator.py (Ph.2) │ │
-│  │  translator.py           │  │  quality_retranslator.py     │ │
-│  │                          │  │                (Ph.3)        │ │
-│  └──────────┬───────────────┘  └──────────────┬───────────────┘ │
-│             │                                 │                 │
-│             └─────────────┬───────────────────┘                 │
-│                           │                                     │
-│             ┌─────────────▼───────────────┐                     │
-│             │        config.py            │                     │
-│             │   (loads .env via dotenv)   │                     │
-│             └─────────────────────────────┘                     │
-└─────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Blog Translation Agent                       │
+│                                                                     │
+│  ┌──────────────────────────────┐  ┌───────────────────────────────┐ │
+│  │   Translation Pipeline       │  │   Quality Pipeline            │ │
+│  │   tools/translation_agent/   │  │   tools/quality_agent/        │ │
+│  │                              │  │                               │ │
+│  │  Step 1 — Scan               │  │  Step 3 — Quality Check       │ │
+│  │    scan_missing_             │  │    quality_scanner.py  (Ph.A) │ │
+│  │      translations.py         │  │    quality_validator.py (Ph.B)│ │
+│  │                              │  │                               │ │
+│  │  Step 2 — Translate          │  │  Step 4 — Retranslate         │ │
+│  │    translator.py             │  │    quality_retranslator.py    │ │
+│  │                              │  │                               │ │
+│  └──────────────┬───────────────┘  └──────────────┬────────────────┘ │
+│                 │                                  │                  │
+│                 └──────────────┬───────────────────┘                  │
+│                                │                                      │
+│                ┌───────────────▼────────────────┐                     │
+│                │           config.py            │                     │
+│                │     (loads .env via dotenv)    │                     │
+│                └────────────────────────────────┘                     │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
 ## Components
 
-### Translation Agent
+### Translation Pipeline (Steps 1 & 2)
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
@@ -44,13 +50,13 @@
 | Metrics | `utils.py` | POSTs job metrics to two Google Apps Script webhooks (team + prod) |
 | Config | `config.py` | Single source of truth for all constants and env-var-backed secrets |
 
-### Quality Control Agent
+### Quality Pipeline (Steps 3 & 4)
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| Scanner | `quality_scanner.py` | Heuristic word-overlap Error% per translated file; writes one row per file to quality sheet |
-| Validator | `quality_validator.py` | AI-based Error% via LLM; samples 20 paragraphs; back-fills sheet |
-| Retranslator | `quality_retranslator.py` | Force-retranslates files above error threshold via `TranslationOrchestrator` |
+| Scanner | `quality_scanner.py` | Step 3, Phase A — heuristic word-overlap Error% per translated file; writes one row per file to quality sheet |
+| Validator | `quality_validator.py` | Step 3, Phase B — AI-based Error% via LLM; samples 20 paragraphs; back-fills sheet |
+| Retranslator | `quality_retranslator.py` | Step 4 — force-retranslates files above error threshold via `TranslationOrchestrator` |
 | Language Guard | `lang_guard.py` | Language code normalization, validation, RTL detection, translation heuristics |
 
 ---
@@ -113,9 +119,9 @@ blog-translation-agent/
 │   │   └── tests/
 │   │
 │   └── quality_agent/
-│       ├── quality_scanner.py              # Phase 1 — heuristic scan
-│       ├── quality_validator.py            # Phase 2 — AI validation
-│       ├── quality_retranslator.py         # Phase 3 — retranslation
+│       ├── quality_scanner.py              # Step 3A — heuristic scan
+│       ├── quality_validator.py            # Step 3B — AI validation
+│       ├── quality_retranslator.py         # Step 4 — retranslation
 │       ├── lang_guard.py                   # Language utilities
 │       └── tests/
 │
