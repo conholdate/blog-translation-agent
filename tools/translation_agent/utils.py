@@ -61,7 +61,14 @@ def send_metrics(   run_id,
     # Send metrics when in PRODUCTION and Agent is not the BLOG SCANNER (to avoid skewing translation metrics with scans)
     if config.PRODUCTION_ENV and agent_name != config.AGENT_BLOG_SCANNER:
         try:
-            response = requests.post(f"{config.METRICS_WEBHOOK_URL_PROD}?token={config.METRICS_TOKEN_PROD}", json=payload, headers={"Content-Type": "application/json"})
+            response = requests.put(
+                config.METRICS_API_URL,
+                json=payload,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Api-Key": config.METRICS_API_KEY,
+                },
+            )
             if response.status_code == 200:
                 print("✅ Metrics sent successfully")
             else:

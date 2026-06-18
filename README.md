@@ -87,7 +87,7 @@ Key variables:
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Google service account for the consolidated scan sheet |
 | `TRANSLATION_SCAN_SHEET_ID` | Consolidated scan sheet (one tab per domain + history tab) |
 | `PAT_GITHUB_SK` | GitHub Personal Access Token for cloning and pushing blog repos |
-| `METRICS_WEBHOOK_URL_PROD` / `METRICS_TOKEN_PROD` | Production metrics webhook |
+| `METRICS_API_KEY` | Production metrics API key (`https://metrics-api.aspose.app/agents`) |
 | `METRICS_WEBHOOK_URL_TEAM` / `METRICS_TOKEN_TEAM` | Team metrics webhook |
 
 For the full list of all variables see [.env.example](.env.example).

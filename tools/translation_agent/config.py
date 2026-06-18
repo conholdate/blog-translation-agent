@@ -460,8 +460,8 @@ PLATFORMS = sorted({
 METRICS_WEBHOOK_URL_TEAM = os.getenv("METRICS_WEBHOOK_URL_TEAM", "")
 METRICS_TOKEN_TEAM       = os.getenv("METRICS_TOKEN_TEAM", "")
 
-METRICS_WEBHOOK_URL_PROD = os.getenv("METRICS_WEBHOOK_URL_PROD", "")
-METRICS_TOKEN_PROD       = os.getenv("METRICS_TOKEN_PROD", "")
+METRICS_API_URL          = "https://metrics-api.aspose.app/agents"
+METRICS_API_KEY          = os.getenv("METRICS_API_KEY", "")
 
 AGENT_BLOG_SCANNER          = "Blog Scanner Agent"
 AGENT_BLOG_POST_TRANSLATOR  = "Blog Translator Agent"

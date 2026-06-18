@@ -130,8 +130,7 @@ jobs:
           TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_CLOUD: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_CLOUD }}
           TRANSLATION_SCAN_SHEET_ID_SUMMARY: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_SUMMARY }}
           # Metrics
-          METRICS_WEBHOOK_URL_PROD: ${{ secrets.METRICS_WEBHOOK_URL_PROD }}
-          METRICS_TOKEN_PROD: ${{ secrets.METRICS_TOKEN_PROD }}
+          METRICS_API_KEY: ${{ secrets.METRICS_API_KEY }}
           METRICS_WEBHOOK_URL_TEAM: ${{ secrets.METRICS_WEBHOOK_URL_TEAM }}
           METRICS_TOKEN_TEAM: ${{ secrets.METRICS_TOKEN_TEAM }}
           # LLM key (needed if --translate is triggered)

@@ -69,7 +69,8 @@ One agent. Four pipeline steps. Two implementation directories.
 | Google Sheets — per-domain scan sheets | Scanner, Translator | `GOOGLE_CREDENTIALS_JSON_SK` |
 | Google Sheets — consolidated scan sheet | Scanner (`write_domain_scan_results`, `update_history_tab`) | `GOOGLE_SERVICE_ACCOUNT_JSON` |
 | GitHub (6 blog repos) | `git_repo_utils.py` | `PAT_GITHUB_SK` |
-| Google Apps Script webhooks (2) | `utils.py` | `METRICS_TOKEN_TEAM`, `METRICS_TOKEN_PROD` |
+| Metrics REST API (`https://metrics-api.aspose.app/agents`) | `utils.py` | `METRICS_API_KEY` |
+| Google Apps Script webhook (team) | `utils.py` | `METRICS_TOKEN_TEAM` |
 
 ---
 
