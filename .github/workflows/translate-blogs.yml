@@ -200,9 +200,6 @@ jobs:
       #############################################################
       # 3. Create Virtual Environment and Install Python Dependencies
       #############################################################
-      - name: Create VENV and Print all environment variables
-        run: env
-      
       - name: Create virtual environment
         run: python -m venv .venv
       
