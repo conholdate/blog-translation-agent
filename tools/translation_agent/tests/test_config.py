@@ -76,6 +76,13 @@ class TestMetricsConfig:
         assert isinstance(config.METRICS_TOKEN_TEAM, str)
         assert config.METRICS_TOKEN_TEAM.strip() != ""
 
+    def test_metrics_api_url_is_correct(self):
+        assert config.METRICS_API_URL == "https://metrics-api.aspose.app/agents"
+
+    def test_metrics_api_key_nonempty(self):
+        assert isinstance(config.METRICS_API_KEY, str)
+        assert config.METRICS_API_KEY.strip() != ""
+
 
 # ============================================================================
 # Language strings
