@@ -464,41 +464,37 @@ class ContentTranslatorAgent:
         # Multiple paragraphs - translate each as a separate chunk
         print(f"📝 Content has {len(paragraphs)} paragraphs, translating chunk by chunk...")
 
-        
-        code_block = False
         translated_chunks = []
-        combined_paragraph = ""
         i = 0
         n = len(paragraphs)
 
         while i < n:
-            paragraph = paragraphs[i]    
+            paragraph = paragraphs[i]
             print(f"   📝 Translating paragraph {i+1}/{len(paragraphs)} : {paragraph[:20].replace(chr(10), '')}...", end=" : ", flush=True)
-            
-            # if paragraph starts with ``` and does not ends with ```, then it's a code block start
-            # so keep adding next paragraphs until we find the ending ```
-            if paragraph.strip().startswith('```') and not paragraph.strip().endswith('```'):
-                code_block = True
-                combined_paragraph += paragraph + "\n\n"
+
+            # An odd number of ``` fence markers means this paragraph opens a code
+            # block that isn't closed within it yet (e.g. the fence is preceded by a
+            # marker comment like <!--[COMPLETE_CODE_SNIPPET_START]--> on the same
+            # blank-line block, or the code body itself contains blank lines). Keep
+            # absorbing subsequent paragraphs - tracking the running fence count -
+            # until it goes back to even, i.e. the block is fully closed.
+            fence_count = paragraph.count('```')
+            if fence_count % 2 == 1:
+                combined = [paragraph]
                 i += 1
-                while i < n and code_block:
+                while i < n and fence_count % 2 == 1:
                     next_paragraph = paragraphs[i]
-                    combined_paragraph += next_paragraph + "\n\n"
-
-                    # check if code block ends here
-                    if next_paragraph.strip().endswith("```"):
-                        code_block = False
-                        break
-
+                    combined.append(next_paragraph)
+                    fence_count += next_paragraph.count('```')
                     i += 1
 
-                paragraph = combined_paragraph.strip()
+                paragraph = '\n\n'.join(combined)
                 print(f"Combined Paragraphs:{paragraph}")
-                combined_paragraph = ""
+            else:
+                i += 1
 
             translated_chunk = self._translate_content_chunk(domain, paragraph, target_lang)
             translated_chunks.append(translated_chunk)
-            i += 1
 
         # Combine translated chunks
         final_content = '\n\n'.join(translated_chunks)
@@ -563,15 +559,18 @@ class ContentTranslatorAgent:
                 Below is the Markdown content to translate:
                 {chunk}"""
             elif should_skip_validation:
-                # Previous attempt corrupted shortcode syntax - ask the model to fix it
-                print(f"   🔄 Retrying shortcode translation (attempt {attempt + 1}/{max_retries}) to fix corrupted syntax...")
-                prompt = f"""IMPORTANT: Your previous translation corrupted the Hugo shortcode syntax, for example by wrapping
-                attribute values in escaped quotes or parentheses like src=(\\"...\\") instead of src="...". This breaks the
-                website build.
+                # Previous attempt corrupted shortcode or code-fence syntax - ask the model to fix it
+                print(f"   🔄 Retrying translation (attempt {attempt + 1}/{max_retries}) to fix corrupted syntax...")
+                prompt = f"""IMPORTANT: Your previous translation corrupted the markdown syntax of this content. This either:
+                (a) altered Hugo shortcode attributes, for example by wrapping a value in escaped quotes or parentheses
+                    like src=(\\"...\\") instead of src="...", or
+                (b) added or removed a ``` code fence marker, shifting where a code block opens/closes.
+                Either of these breaks the website build.
 
                 Translate the provided markdown content to {self.config.language_names.get(target_lang, "")} language having code '{target_lang}'.
-                Keep the shortcode parameter syntax EXACTLY as in the original (same quoting style, no added backslashes
-                or parentheses). Only translate the human-readable text inside attribute values.
+                Keep ALL shortcode syntax and ``` fence markers EXACTLY as in the original - same count, same position,
+                same quoting style, no added backslashes or parentheses. Only translate the human-readable text (prose,
+                shortcode attribute text) - never translate code, and never add or remove a ``` marker.
 
                 CRITICAL_RULES to follow:
                 {CRITICAL_RULES}
@@ -611,11 +610,19 @@ class ContentTranslatorAgent:
             # Check if translation was successful
             if should_skip_validation:
                 # Shortcode/code-block content skips translation-quality validation, but still
-                # gets checked for shortcode syntax corruption (e.g. added escaping/parentheses).
+                # gets checked for syntax corruption (e.g. added escaping/parentheses, or a
+                # ``` fence the model inserted/dropped while "fixing" what looked unbalanced).
                 if self._shortcode_syntax_corrupted(chunk, translated_chunk):
                     print(f"   ⚠️  Detected corrupted shortcode syntax on attempt {attempt + 1}")
                     if attempt == max_retries - 1:
                         print(f"   ❌ Shortcode syntax still corrupted after {max_retries} attempts, keeping original chunk")
+                        return chunk
+                    continue  # Retry with the syntax-fix prompt
+
+                if self._code_fence_count_mismatched(chunk, translated_chunk):
+                    print(f"   ⚠️  Detected code fence (```) count mismatch on attempt {attempt + 1}")
+                    if attempt == max_retries - 1:
+                        print(f"   ❌ Code fence mismatch persisted after {max_retries} attempts, keeping original chunk")
                         return chunk
                     continue  # Retry with the syntax-fix prompt
 
@@ -763,12 +770,25 @@ class ContentTranslatorAgent:
                 return True
         return False
 
+    def _code_fence_count_mismatched(self, original: str, translated: str) -> bool:
+        """Detect the model adding/dropping a ``` fence marker while translating.
+
+        This happens when a fenced code block is preceded by a marker comment
+        (e.g. <!--[COMPLETE_CODE_SNIPPET_START]-->) so the model sees a chunk that
+        looks like it has an "unbalanced" fence and tries to self-heal it by
+        inserting (or removing) a closing ```, which shifts where the fence
+        actually closes and breaks the markdown.
+        """
+        return original.count('```') != translated.count('```')
+
     def _should_skip_translation_validation(self, chunk: str) -> bool:
         """Check if a chunk should skip translation validation (code blocks, shortcodes, etc.)"""
         chunk_stripped = chunk.strip()
 
-        # Skip if it's a code block (starts or ends with ```)
-        if chunk_stripped.startswith('```') or chunk_stripped.endswith('```'):
+        # Skip if it's (or contains) a code block. Don't require the fence to be at
+        # the very start/end - a marker comment like <!--[COMPLETE_CODE_SNIPPET_START]-->
+        # can precede the opening ``` within the same combined chunk.
+        if '```' in chunk_stripped:
             return True
 
         if chunk_stripped == '---':
