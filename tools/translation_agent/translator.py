@@ -540,7 +540,11 @@ class ContentTranslatorAgent:
                 9. Provide ONLY the translated markdown, no explanations or preamble is needed.
                 10. If the provided content seems empty or just contain markdown formatting, return the content as it is.
                 11. Ensure the translated content should not result in any markdown parsing errors.
-                12. If the values of attributes in shortcodes contain double quotes (") then escape the internal quotes using (\\")
+                12. Do NOT alter the syntax of Hugo shortcodes (e.g. {{< figure src="..." alt="..." >}}). Keep parameter
+                    names, the "key=value" structure, and the existing quoting style EXACTLY as in the original.
+                    Only translate the human-readable text inside attribute values (like alt text). Never wrap values
+                    in parentheses, never add backslashes, and only escape a quote (\\") if that exact attribute value
+                    already contains a literal double-quote character in the original.
         """
 
 
@@ -550,7 +554,7 @@ class ContentTranslatorAgent:
             if attempt == 0:
                 # First attempt - normal prompt
                 prompt = f"""Translate the provided markdown content to {self.config.language_names.get(target_lang, "")} language having code '{target_lang}'.
-                
+
                 CRITICAL_RULES to follow:
                 {CRITICAL_RULES}
 
@@ -558,11 +562,24 @@ class ContentTranslatorAgent:
 
                 Below is the Markdown content to translate:
                 {chunk}"""
-            else:            
+            elif should_skip_validation:
+                # Previous attempt corrupted shortcode syntax - ask the model to fix it
+                print(f"   🔄 Retrying shortcode translation (attempt {attempt + 1}/{max_retries}) to fix corrupted syntax...")
+                prompt = f"""IMPORTANT: Your previous translation corrupted the Hugo shortcode syntax, for example by wrapping
+                attribute values in escaped quotes or parentheses like src=(\\"...\\") instead of src="...". This breaks the
+                website build.
+
+                Translate the provided markdown content to {self.config.language_names.get(target_lang, "")} language having code '{target_lang}'.
+                Keep the shortcode parameter syntax EXACTLY as in the original (same quoting style, no added backslashes
+                or parentheses). Only translate the human-readable text inside attribute values.
+
+                CRITICAL_RULES to follow:
+                {CRITICAL_RULES}
+
+                Below is the Markdown content to translate:
+                {chunk}"""
+            else:
                 # Retry attempts - stronger prompt (only if not skipping validation)
-                if should_skip_validation:
-                    break  # Don't retry for code blocks/shortcodes
-    
                 print(f"   🔄 Translation attempt {attempt + 1}/{max_retries}...")
 
                 prompt = f"""IMPORTANT: This is RETRY ATTEMPT #{attempt + 1}. The previous translation returned untranslated content.
@@ -593,11 +610,18 @@ class ContentTranslatorAgent:
 
             # Check if translation was successful
             if should_skip_validation:
-                # print(f"   should_skip_validation is True")
-                # Skip validation for code blocks/shortcodes - accept as successful
+                # Shortcode/code-block content skips translation-quality validation, but still
+                # gets checked for shortcode syntax corruption (e.g. added escaping/parentheses).
+                if self._shortcode_syntax_corrupted(chunk, translated_chunk):
+                    print(f"   ⚠️  Detected corrupted shortcode syntax on attempt {attempt + 1}")
+                    if attempt == max_retries - 1:
+                        print(f"   ❌ Shortcode syntax still corrupted after {max_retries} attempts, keeping original chunk")
+                        return chunk
+                    continue  # Retry with the syntax-fix prompt
+
                 if attempt > 0:
                     print(f"   ✓ Translation successful on attempt {attempt + 1} (skipped validation)")
-                
+
                 print(f"   -- Skip validation -- >>{translated_chunk[:20].replace(chr(10), '')}")
 
                 return translated_chunk
@@ -720,6 +744,24 @@ class ContentTranslatorAgent:
         except Exception as e:
             print(f"   ❌ AI analysis failed: {e}, defaulting to RETRY")
             return 'RETRY'
+
+    def _shortcode_syntax_corrupted(self, original: str, translated: str) -> bool:
+        """Detect common LLM corruption of Hugo shortcode parameter syntax.
+
+        The model sometimes "fixes" quoting it wasn't asked to touch by wrapping
+        attribute values in escaped quotes/parentheses (e.g. src=(\\"...\\")), which
+        Hugo cannot parse. Flag these patterns only if they weren't already present
+        in the original content.
+        """
+        corrupted_patterns = [
+            r'=\(\\?"',   # src=(" or src=(\"
+            r'\\"\)',     # ...\")
+            r'=\\"',      # src=\"
+        ]
+        for pattern in corrupted_patterns:
+            if re.search(pattern, translated) and not re.search(pattern, original):
+                return True
+        return False
 
     def _should_skip_translation_validation(self, chunk: str) -> bool:
         """Check if a chunk should skip translation validation (code blocks, shortcodes, etc.)"""
