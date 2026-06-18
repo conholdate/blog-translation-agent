@@ -105,6 +105,24 @@ Blog Translation Agent
 
 ---
 
+## Testing — agents may self-verify
+
+Agents **are allowed to run the test suite** to verify their own changes. Running tests is a
+read-only operation and is encouraged before reporting a task complete.
+
+| Command | Scope |
+|---------|-------|
+| `make test` &nbsp;/&nbsp; `python -m pytest -q` | Full suite (paths from `pytest.ini`) |
+| `make test-translation` &nbsp;/&nbsp; `python -m pytest tools/translation_agent/tests/` | Translation Pipeline (Steps 1–2) |
+| `make test-quality` &nbsp;/&nbsp; `python -m pytest tools/quality_agent/tests/` | Quality Pipeline (Steps 3–4) |
+
+Notes:
+- **Running** tests is allowed; **modifying** the test files under `tools/*/tests/` is not (see Forbidden Paths).
+- Tests are helper/edge-case level and do not require live credentials.
+- These commands are pre-approved for Claude in `.claude/settings.local.json` so agents can run them without prompting.
+
+---
+
 ## Safety Rules
 
 - Agents must never modify the English source file (`index.md`) — only language variants (`index.{lang}.md`)
