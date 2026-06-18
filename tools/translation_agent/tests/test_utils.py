@@ -100,10 +100,10 @@ class TestSendMetricsProd:
         original = config.PRODUCTION_ENV
         config.PRODUCTION_ENV = False
         try:
-            with patch("requests.post", return_value=MagicMock(status_code=200)) as mock_post:
+            with patch("requests.post", return_value=MagicMock(status_code=200)), \
+                 patch("requests.put", return_value=MagicMock(status_code=200)) as mock_put:
                 utils.send_metrics(**_base_kwargs())
-            urls_called = [c.args[0] for c in mock_post.call_args_list]
-            assert not any(config.METRICS_WEBHOOK_URL_PROD in url for url in urls_called if config.METRICS_WEBHOOK_URL_PROD != config.METRICS_WEBHOOK_URL_TEAM)
+            mock_put.assert_not_called()
         finally:
             config.PRODUCTION_ENV = original
 
@@ -111,10 +111,9 @@ class TestSendMetricsProd:
         original = config.PRODUCTION_ENV
         config.PRODUCTION_ENV = True
         try:
-            with patch("requests.post", return_value=MagicMock(status_code=200)) as mock_post:
+            with patch("requests.post", return_value=MagicMock(status_code=200)), \
+                 patch("requests.put", return_value=MagicMock(status_code=200)) as mock_put:
                 utils.send_metrics(**_base_kwargs(agent_name=config.AGENT_BLOG_SCANNER))
-            urls_called = [c.args[0] for c in mock_post.call_args_list]
-            prod_calls = [u for u in urls_called if config.METRICS_WEBHOOK_URL_PROD in u and config.METRICS_WEBHOOK_URL_TEAM not in u]
-            assert len(prod_calls) == 0
+            mock_put.assert_not_called()
         finally:
             config.PRODUCTION_ENV = original
