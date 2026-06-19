@@ -115,7 +115,7 @@ blog-translation-agent/
 │   │   ├── scan_missing_translations.py    # Missing-translation scanner
 │   │   ├── git_repo_utils.py               # Clone / pull blog repos
 │   │   ├── io_google_spreadsheet.py        # Google Sheets read/write
-│   │   ├── utils.py                        # Metrics webhooks
+│   │   ├── utils.py                        # Metrics (REST API)
 │   │   ├── config.py                       # All constants + env vars
 │   │   └── tests/
 │   │
@@ -128,16 +128,21 @@ blog-translation-agent/
 │
 ├── docs/
 │   ├── ARCHITECTURE.md                     # This file
-│   └── ORCHESTRATION.md                    # State model + control flow
+│   ├── ORCHESTRATION.md                    # State model + control flow
+│   ├── RUNBOOK.md                          # Operations + incident response
+│   └── DATA_HANDLING.md                    # Data flow, secrets, retention
 │
 ├── .github/
-│   ├── workflows/                          # GitHub Actions (daily scan + translation)
+│   ├── workflows/                          # CI gate, operational (scan/translate), release, alerts
+│   ├── dependabot.yml                      # Weekly dependency updates
 │   └── CODEOWNERS
 │
 ├── AGENTS.md                               # Agent governance policy
+├── CHANGELOG.md                            # Change history
 ├── CONTRIBUTING.md                         # Developer guide
+├── Makefile                                # Test targets
 ├── README.md
-├── requirements.txt
+├── requirements.txt / requirements.lock
 └── pytest.ini
 ```
 
@@ -145,9 +150,26 @@ blog-translation-agent/
 
 ## CI / CD
 
+**Quality gate** — `ci.yml`, on every push and pull request:
+
+| Job | What it does |
+|-----|--------------|
+| Tests | `pytest` with a coverage floor (`--cov-fail-under=35`) |
+| Secret & env-dump scan | Fails if a workflow reintroduces `run: env` or a hardcoded secret appears in tracked source |
+
+**Operational** — daily cron + manual dispatch:
+
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `scan-missing-translations.yml` | Daily 01:00 UTC + manual | Runs scanner for all 6 domains in parallel matrix |
-| `translate-blogs.yml` | Manual dispatch | Translates posts for a chosen domain, product, author, and limit |
+| `scan-missing-translations.yml` | Daily 00:00 UTC + manual | Runs scanner for all 6 domains |
+| `translate-blog-*.yml` (per domain) | Daily 01:00 UTC + manual | Translates and commits missing posts |
+| `translate-blogs.yml` | Manual dispatch | Translates a chosen domain, product, author, and limit |
 
-Secrets are injected via GitHub repository secrets — no credentials exist in committed files.
+**Release & alerts:**
+
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `release.yml` | `vX.Y.Z` tag | Validates the `CHANGELOG.md` entry and publishes a GitHub Release |
+| `alert-on-failure.yml` | Operational workflow failure | Alerts via the `ALERT_WEBHOOK_URL` secret |
+
+Secrets are injected via GitHub repository secrets — no credentials exist in committed files, and workflows never dump the environment (`run: env`); CI enforces both.

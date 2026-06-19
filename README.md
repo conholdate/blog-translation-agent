@@ -59,18 +59,37 @@ blog-translation-agent/
 │       └── README.md
 ├── docs/
 │   ├── ARCHITECTURE.md             # System overview and component map
-│   └── ORCHESTRATION.md            # Pipeline steps, state models, extension points
+│   ├── ORCHESTRATION.md            # Pipeline steps, state models, extension points
+│   ├── RUNBOOK.md                  # Operations: runs, credential rotation, recovery, escalation
+│   └── DATA_HANDLING.md            # Data flow, secrets storage, retention
 ├── .github/
-│   ├── workflows/                  # GitHub Actions
+│   ├── workflows/                  # GitHub Actions (CI gate, operational, release, alerts)
+│   ├── dependabot.yml              # Weekly pip + Actions dependency updates
 │   └── CODEOWNERS
 ├── blog-checkedout-repo/           # Blog repo checkouts (gitignored — local + CI)
 ├── AGENTS.md                       # Agent governance policy
-├── CHANGELOG.md                    # Change history
+├── CHANGELOG.md                    # Change history (Keep a Changelog)
 ├── CONTRIBUTING.md                 # Developer guide
+├── Makefile                        # test / test-translation / test-quality targets
 ├── .env                            # Local secrets (gitignored — copy from .env.example)
 ├── .env.example                    # Template with all required variable names
+├── requirements.txt                # Direct dependencies
+├── requirements.lock               # Pinned dependency tree (CI installs from this)
 └── pytest.ini
 ```
+
+---
+
+## Documentation
+
+| Doc | Purpose |
+|-----|---------|
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | System overview and component map |
+| [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md) | Pipeline steps, state models, extension points |
+| [docs/RUNBOOK.md](docs/RUNBOOK.md) | Operations: manual runs, credential rotation, recovery, escalation |
+| [docs/DATA_HANDLING.md](docs/DATA_HANDLING.md) | What data is processed, where secrets live, retention |
+| [AGENTS.md](AGENTS.md) | Agent governance policy and allowed/forbidden paths |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Local setup, testing, and release process |
 
 ---
 
@@ -94,9 +113,22 @@ For the full list of all variables see [.env.example](.env.example).
 
 ---
 
-## CI Workflows
+## Continuous Integration & Workflows
 
-All workflows live in `.github/workflows/`. They run on a daily cron schedule and can also be triggered manually via `workflow_dispatch`.
+All workflows live in `.github/workflows/`.
+
+### Quality gate — `ci.yml`
+
+Runs on every push and pull request to `main`:
+
+- **Tests + coverage** — `pytest` with a coverage floor (`--cov-fail-under=35`)
+- **Secret & env-dump scan** — fails the build if any workflow reintroduces `run: env` or a hardcoded secret pattern appears in tracked source
+
+Enable branch protection on `main` requiring these checks so nothing merges without passing.
+
+### Operational workflows
+
+Run on a daily cron and can also be triggered manually via `workflow_dispatch`:
 
 | Workflow file | Domain | Schedule (UTC) | What it does |
 |---------------|--------|----------------|--------------|
@@ -107,6 +139,31 @@ All workflows live in `.github/workflows/`. They run on a daily cron schedule an
 | `translate-blog-groupdocs-cloud.yml` | blog.groupdocs.cloud | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
 | `translate-blog-conholdate-com.yml` | blog.conholdate.com | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
 | `translate-blog-conholdate-cloud.yml` | blog.conholdate.cloud | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
+
+### Release & alerts
+
+- `release.yml` — triggered by a `vX.Y.Z` tag; validates the matching `CHANGELOG.md` entry and publishes a GitHub Release
+- `alert-on-failure.yml` — watches the operational workflows and alerts (via the `ALERT_WEBHOOK_URL` secret) when one fails
+
+---
+
+## Development
+
+```bash
+# Set up
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.lock
+cp .env.example .env          # then fill in values
+
+# Run tests
+make test                     # full suite (or: make test-translation / make test-quality)
+```
+
+Tests live in `tools/translation_agent/tests/` and `tools/quality_agent/tests/`. CI runs the same suite with a coverage gate on every push and PR.
+
+### Releases
+
+Versioned via [Keep a Changelog](https://keepachangelog.com/) + git tags (current line: **v2.0.0**; the v1 era ran through 2025-12-31). To cut a release: add a `## [X.Y.Z]` entry to `CHANGELOG.md`, then push a `vX.Y.Z` tag — `release.yml` validates the entry and publishes the GitHub Release.
 
 ---
 

@@ -25,10 +25,13 @@ Ask the team for actual values. Never commit `.env`.
 ### 3. Run tests
 
 ```bash
-pytest
+make test                 # full suite (pytest)
+# or target one pipeline:
+make test-translation     # Steps 1–2
+make test-quality         # Steps 3–4
 ```
 
-All tests must pass before submitting changes.
+All tests must pass before submitting changes. CI runs the same suite with a coverage gate (`--cov-fail-under=35`) on every push and pull request — keep coverage at or above the floor.
 
 ---
 
@@ -70,14 +73,30 @@ Update `PROFESSIONALIZE_BASE_URL` and `PROFESSIONALIZE_LLM_MODEL` in `.env`. The
 
 - Python 3.13+
 - No hardcoded secrets, tokens, URLs, or local paths — all must go through `config.py` → `.env`
+- Never add a `run: env` step to a workflow — CI's secret-scan rejects it
 - Tests live in `tools/translation_agent/tests/` and `tools/quality_agent/tests/`
-- Run `pytest` before every commit
+- Run `make test` before every commit (CI enforces this plus a secret/env-dump scan)
 
 ---
 
 ## Submitting Changes
 
 1. Create a branch from `main`
-2. Make changes, ensure `pytest` passes
-3. Open a pull request — CODEOWNERS will be notified automatically for review
-4. Do not merge without at least one review approval
+2. Make changes; run `make test` and ensure it passes
+3. Open a pull request — the CI quality gate (tests + coverage + secret/env-dump scan) runs automatically
+4. Merge once the required checks are green (plus review approval, if your branch-protection rules require one)
+
+---
+
+## Cutting a Release
+
+Releases are versioned with [Keep a Changelog](https://keepachangelog.com/) entries + git tags. Current line: **v2.0.0** (the v1 era ran through 2025-12-31).
+
+1. Add a `## [X.Y.Z] — YYYY-MM-DD` section to `CHANGELOG.md` describing the changes
+2. Merge to `main`
+3. Tag and push the version:
+   ```bash
+   git tag -a vX.Y.Z -m "vX.Y.Z"
+   git push origin vX.Y.Z
+   ```
+4. `release.yml` verifies the matching changelog entry, extracts the notes, and publishes the GitHub Release
