@@ -42,9 +42,10 @@ jobs:
           METRICS_API_KEY: ci-test-key
         run: |
           python -m pytest -q \
-            --cov=tools --cov-report=term-missing --cov-report=xml
-          # NOTE: coverage is report-only for now. Once a baseline is known, add
-          # `--cov-fail-under=<N>` above and ratchet it up over time.
+            --cov=tools --cov-report=term-missing --cov-report=xml \
+            --cov-fail-under=35
+          # Baseline ~38%. Ratchet this number up as tests are added (next targets:
+          # translator.py chunking/retry paths, io_google_spreadsheet, scan_missing_translations).
 
       - name: Upload coverage artifact
         if: always()
