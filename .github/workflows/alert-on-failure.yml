@@ -1,0 +1,47 @@
+name: Alert on workflow failure
+
+# Watches the operational (scan/translate) workflows and raises an alert when one
+# fails on a scheduled/unattended run. Single watcher — no need to edit each workflow.
+#
+# Set repo secret ALERT_WEBHOOK_URL (Slack/Teams/generic incoming webhook) to receive
+# external alerts. If unset, this is a no-op (GitHub still emails the run actor).
+
+on:
+  workflow_run:
+    workflows:
+      - "Daily Blogs Scan - Missing Translations"
+      - "Translate Blog Posts"
+      - "Auto Translate - blog.aspose.com"
+      - "Auto Translate - blog.aspose.cloud"
+      - "Auto Translate - blog.groupdocs.com"
+      - "Auto Translate - blog.groupdocs.cloud"
+      - "Auto Translate - blog.conholdate.com"
+      - "Auto Translate - blog.conholdate.cloud"
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    env:
+      ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+      WF_NAME: ${{ github.event.workflow_run.name }}
+      WF_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      WF_URL: ${{ github.event.workflow_run.html_url }}
+    steps:
+      - name: Send webhook alert
+        if: ${{ env.ALERT_WEBHOOK_URL != '' }}
+        run: |
+          curl -fsS -X POST "$ALERT_WEBHOOK_URL" \
+            -H 'Content-Type: application/json' \
+            -d "{\"text\":\"❌ Workflow failed: ${WF_NAME} on ${WF_BRANCH}\n${WF_URL}\"}"
+
+      - name: No webhook configured
+        if: ${{ env.ALERT_WEBHOOK_URL == '' }}
+        run: |
+          echo "::warning::${WF_NAME} failed on ${WF_BRANCH} (${WF_URL})."
+          echo "Set repo secret ALERT_WEBHOOK_URL to enable external alerts."

@@ -75,6 +75,8 @@ The agent only writes language variants (`index.{lang}.md`) — it never modifie
 
 ## 6. Escalation
 
+**Automated alerting:** `.github/workflows/alert-on-failure.yml` watches all scan/translate workflows and fires when one fails. Set the repo secret `ALERT_WEBHOOK_URL` (Slack/Teams/incoming webhook) to receive alerts; without it, GitHub still emails the run actor. Treat a failed scheduled run as the trigger to start here.
+
 1. Owner / first responder: **Shoaib Khan**.
 2. Sub-area owners per `.github/CODEOWNERS` (`tools/translation_agent/` co-maintainers).
 3. For a suspected credential exposure: rotate immediately (§3), then review Actions logs for the affected window.

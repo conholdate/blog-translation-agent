@@ -5,6 +5,40 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [Unreleased]
+
+---
+
+## [2.0.0] — 2026-06-19
+
+First tagged release of the **v2** line (the v1 era ran through 2025-12-31). Consolidates the operational hardening since 2026-06-14.
+
+### Added
+- CI quality gate (`.github/workflows/ci.yml`): `pytest` + coverage with `--cov-fail-under=35`, plus a secret/env-dump scan, on every push and PR
+- `pytest-cov` dependency; coverage artifacts git-ignored
+- `tools/translation_agent/tests/test_translator_guards.py` — 16 tests for the shortcode/code-fence guards and the URL-language helper
+- `docs/RUNBOOK.md` — operational runbook (runs, credential rotation, recovery/rollback, escalation, severity guide)
+- `docs/DATA_HANDLING.md` — data-flow, secrets, and retention summary
+- `Makefile` — `test` / `test-translation` / `test-quality` targets; agents pre-approved to self-verify (see `AGENTS.md`)
+- `.github/dependabot.yml` — weekly pip + GitHub Actions dependency updates
+- `.github/workflows/release.yml` — tag-driven release that validates this changelog and publishes a GitHub Release
+- `.github/workflows/alert-on-failure.yml` — single watcher that alerts when an operational workflow fails
+
+### Changed
+- Migrated production metrics from the Apps Script webhook to the REST endpoint (`METRICS_API_URL` + env-based `X-Api-Key`)
+- Removed the `Print all environment variables` (`run: env`) step from all 8 operational workflows
+
+### Fixed
+- LLM corruption of Hugo shortcode syntax during translation retries
+- Code-fence detection so marker-wrapped snippets translate as one block
+- Stale metrics tests after the webhook→REST migration
+
+### Security
+- CI fails if a workflow reintroduces `run: env` or if a hardcoded secret pattern appears in tracked source
+- Sensitive-logging risk (CI env dumps) eliminated
+
+---
+
 ## [2026-06-14]
 
 ### Added

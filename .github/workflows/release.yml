@@ -1,0 +1,45 @@
+name: Release
+
+# Tag-driven release. Push a tag like `v2.0.0`; this validates that CHANGELOG.md
+# has a matching entry, extracts the notes, and publishes a GitHub Release.
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Verify CHANGELOG entry matches the tag
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          if ! grep -qF "## [$VERSION]" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$VERSION]' heading for tag $GITHUB_REF_NAME. Add the release notes before tagging."
+            exit 1
+          fi
+          echo "Found CHANGELOG entry for $VERSION."
+
+      - name: Extract release notes for this version
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VERSION" '
+            index($0, "## [" ver "]") {f=1; next}
+            /^## \[/ {f=0}
+            f
+          ' CHANGELOG.md > RELEASE_NOTES.md
+          echo "----- release notes -----"; cat RELEASE_NOTES.md
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          body_path: RELEASE_NOTES.md
