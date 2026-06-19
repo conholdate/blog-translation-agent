@@ -6,6 +6,6 @@ openai==2.8.0
 openai-agents==0.5.0
 openpyxl==3.1.5
 pytest==8.4.2
-python-dotenv==1.2.1
+python-dotenv==1.2.2
 PyYAML==6.0.3
 requests==2.32.5
