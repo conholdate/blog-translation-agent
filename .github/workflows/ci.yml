@@ -30,9 +30,16 @@ jobs:
           pip install -r requirements.lock
           pip install pytest-cov
 
-      # Helper/edge-case suite — no live credentials required (config defaults to "").
-      # If a test ever needs stubs, add a NON-secret env: block here (never real secrets).
+      # The config-presence tests read these from the environment. In CI there is no
+      # .env, so we inject NON-SECRET placeholders (never real credentials) purely to
+      # satisfy the "is it set / well-formed" assertions in test_config.py.
       - name: Run tests with coverage
+        env:
+          PROFESSIONALIZE_BASE_URL: http://ci.local
+          PROFESSIONALIZE_LLM_MODEL: ci-test-model
+          METRICS_WEBHOOK_URL_TEAM: http://ci.local
+          METRICS_TOKEN_TEAM: ci-test-token
+          METRICS_API_KEY: ci-test-key
         run: |
           python -m pytest -q \
             --cov=tools --cov-report=term-missing --cov-report=xml
