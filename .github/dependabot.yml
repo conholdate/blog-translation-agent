@@ -1,18 +1,11 @@
 version: 2
 updates:
-  # Python dependencies (root requirements.txt → regenerate requirements.lock on bump)
-  - package-ecosystem: "pip"
-    directory: "/"
-    target-branch: "dev"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-    commit-message:
-      prefix: "deps"
-
-  # GitHub Actions versions used across the 8 operational workflows + CI
+  # GitHub Actions versions used across the 8 operational workflows + CI.
+  #
+  # Python deps are intentionally NOT managed here: the project installs from the
+  # pinned `requirements.lock`, which Dependabot can't regenerate. Update Python
+  # deps manually (edit requirements.txt → regenerate requirements.lock → make test).
+  # Dependabot SECURITY alerts still cover Python via the dependency graph.
   - package-ecosystem: "github-actions"
     directory: "/"
     target-branch: "dev"

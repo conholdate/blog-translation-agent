@@ -69,6 +69,18 @@ Update `PROFESSIONALIZE_BASE_URL` and `PROFESSIONALIZE_LLM_MODEL` in `.env`. The
 
 ---
 
+## Updating Dependencies
+
+- **GitHub Actions** — handled automatically by Dependabot (PRs open against `dev`).
+- **Python packages** — manual, to keep `requirements.lock` reproducible:
+  1. Edit the pinned version in `requirements.txt`
+  2. Regenerate the lock: `pip install -r requirements.txt && pip freeze > requirements.lock`
+  3. `make test`, then PR via `dev → main`
+
+Dependabot security alerts still cover Python dependencies (via the dependency graph) even though it doesn't open routine version PRs for them.
+
+---
+
 ## Code Style
 
 - Python 3.13+
