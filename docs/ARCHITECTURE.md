@@ -150,7 +150,7 @@ blog-translation-agent/
 
 ## CI / CD
 
-**Quality gate** — `ci.yml`, on every push and pull request:
+**Quality gate** — `ci.yml`, on every push and pull request to `main`/`dev`:
 
 | Job | What it does |
 |-----|--------------|
@@ -171,5 +171,6 @@ blog-translation-agent/
 |----------|---------|--------------|
 | `release.yml` | `vX.Y.Z` tag | Validates the `CHANGELOG.md` entry and publishes a GitHub Release |
 | `alert-on-failure.yml` | Operational workflow failure | Alerts via the `ALERT_WEBHOOK_URL` secret |
+| `auto-pr-dev-to-main.yml` | CI success on `dev` | Opens a `dev → main` promotion PR (never auto-merges) |
 
 Secrets are injected via GitHub repository secrets — no credentials exist in committed files, and workflows never dump the environment (`run: env`); CI enforces both.
