@@ -79,12 +79,23 @@ Update `PROFESSIONALIZE_BASE_URL` and `PROFESSIONALIZE_LLM_MODEL` in `.env`. The
 
 ---
 
-## Submitting Changes
+## Branching Model
 
-1. Create a branch from `main`
-2. Make changes; run `make test` and ensure it passes
-3. Open a pull request — the CI quality gate (tests + coverage + secret/env-dump scan) runs automatically
-4. Merge once the required checks are green (plus review approval, if your branch-protection rules require one)
+- **`main`** — production. Protected: no direct pushes; changes land only via pull request with the CI checks green. The daily scan/translate workflows and releases run from here.
+- **`dev`** — integration branch. Do your work here (or on short-lived feature branches off `dev`).
+
+Day-to-day flow:
+
+1. Commit to `dev` (or a feature branch → `dev`) and push.
+2. **CI runs on `dev`** — tests + coverage + secret/env-dump scan.
+3. On green, a **`dev → main` pull request opens automatically** (`auto-pr-dev-to-main.yml`).
+4. The PR re-runs CI as the required check.
+5. **You merge** when ready — promotion to production is always a deliberate human decision; nothing auto-merges.
+6. Cut a release from `main` (below).
+
+Run `make test` locally before pushing so the gate rarely surprises you.
+
+> Setup notes: the auto-PR workflow needs Settings → Actions → General → **"Allow GitHub Actions to create and approve pull requests"** enabled, and it only fires once `auto-pr-dev-to-main.yml` exists on `main`.
 
 ---
 
