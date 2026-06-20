@@ -1,0 +1,53 @@
+name: Auto PR (dev → main)
+
+# When CI succeeds on `dev`, open (or reuse) a pull request to promote dev → main.
+# This only CREATES the PR — a human still reviews and merges. It never auto-merges.
+
+on:
+  workflow_run:
+    workflows: ["CI"]      # must match the `name:` in ci.yml
+    types: [completed]
+    branches: [dev]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  open-pr:
+    # Only when the CI run on dev actually passed.
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'dev' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Open or reuse dev → main PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CI_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+
+          # Don't open a duplicate if one is already open.
+          existing=$(gh pr list --base main --head dev --state open \
+                       --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "PR #$existing already open for dev → main — nothing to do."
+            exit 0
+          fi
+
+          # Try to create it; tolerate the "no commits between" case gracefully.
+          if ! gh pr create --base main --head dev \
+                 --title "Promote dev → main" \
+                 --body "Auto-opened after CI passed on \`dev\`. CI run: ${CI_RUN_URL}
+
+          Review the diff and merge when you want to promote to production." 2> err.log; then
+            if grep -qiE "no commits between|already exists" err.log; then
+              echo "Nothing to promote (dev not ahead of main, or PR exists)."
+              exit 0
+            fi
+            echo "::error::Failed to create PR"; cat err.log; exit 1
+          fi
+          echo "Opened dev → main PR."
