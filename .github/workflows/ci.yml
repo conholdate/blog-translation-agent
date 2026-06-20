@@ -84,6 +84,39 @@ jobs:
           fi
           exit "$fail"
 
+  dependency-scan:
+    name: Dependency vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Audit dependencies for known CVEs (pip-audit)
+        run: |
+          python -m pip install --upgrade pip pip-audit
+          # Non-blocking for now — surfaces vulnerable dependencies without breaking
+          # the build. Remove '|| true' to make it enforcing once the report is clean.
+          pip-audit -r requirements.lock || true
+
+      - name: Generate SBOM (CycloneDX)
+        run: |
+          python -m pip install cyclonedx-bom
+          cyclonedx-py requirements requirements.lock -o sbom.json \
+            || cyclonedx-py -r -i requirements.lock -o sbom.json \
+            || true
+
+      - name: Upload SBOM
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: sbom
+          path: sbom.json
+          if-no-files-found: ignore
+
   # Optional history-aware scanner (org use needs GITLEAKS_LICENSE):
   # gitleaks:
   #   runs-on: ubuntu-latest
