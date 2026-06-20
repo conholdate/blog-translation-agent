@@ -119,7 +119,7 @@ All workflows live in `.github/workflows/`.
 
 ### Quality gate — `ci.yml`
 
-Runs on every push and pull request to `main`:
+Runs on every push and pull request to `main` and `dev`:
 
 - **Tests + coverage** — `pytest` with a coverage floor (`--cov-fail-under=35`)
 - **Secret & env-dump scan** — fails the build if any workflow reintroduces `run: env` or a hardcoded secret pattern appears in tracked source
@@ -144,6 +144,11 @@ Run on a daily cron and can also be triggered manually via `workflow_dispatch`:
 
 - `release.yml` — triggered by a `vX.Y.Z` tag; validates the matching `CHANGELOG.md` entry and publishes a GitHub Release
 - `alert-on-failure.yml` — watches the operational workflows and alerts (via the `ALERT_WEBHOOK_URL` secret) when one fails
+- `auto-pr-dev-to-main.yml` — when CI passes on `dev`, automatically opens a `dev → main` promotion PR (never auto-merges)
+
+### Branching
+
+Work happens on **`dev`**; **`main`** is protected production. Push to `dev` → CI runs → on green a `dev → main` PR opens automatically → you review and merge → tag a release. See [CONTRIBUTING.md](CONTRIBUTING.md#branching-model) for the full flow.
 
 ---
 
