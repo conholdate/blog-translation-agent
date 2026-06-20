@@ -28,7 +28,7 @@ jobs:
       # 0. CHECKOUT THIS REPO (blog-translation-tools)
       #############################################################
       - name: Checkout blog-translation-tools
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
 
       #############################################################
       # 1. CHECKOUT TARGET REPO (blog.groupdocs.com)
@@ -74,7 +74,7 @@ jobs:
 
 
       - name: Checkout Selected Blogs REPO
-        uses: actions/checkout@v5
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.REPO }}
           token: ${{ secrets.PAT_GITHUB_SK }}
