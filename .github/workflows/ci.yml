@@ -43,8 +43,8 @@ jobs:
         run: |
           python -m pytest -q \
             --cov=tools --cov-report=term-missing --cov-report=xml \
-            --cov-fail-under=35
-          # Baseline ~38%. Ratchet this number up as tests are added (next targets:
+            --cov-fail-under=40
+          # Baseline ~43%. Ratchet this number up as tests are added (next targets:
           # translator.py chunking/retry paths, io_google_spreadsheet, scan_missing_translations).
 
       - name: Upload coverage artifact
