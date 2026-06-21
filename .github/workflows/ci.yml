@@ -117,6 +117,24 @@ jobs:
           path: sbom.json
           if-no-files-found: ignore
 
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Ruff
+        run: |
+          python -m pip install ruff
+          # Non-blocking for now — surfaces lint issues without breaking the build.
+          # Remove '|| true' (and add 'lint' to required checks) once the tree is clean.
+          ruff check . || true
+
   # Optional history-aware scanner (org use needs GITLEAKS_LICENSE):
   # gitleaks:
   #   runs-on: ubuntu-latest
