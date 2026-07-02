@@ -1,0 +1,101 @@
+# Quality gate mirror of .github/workflows/ci.yml — tests/lint/security only.
+# Intentionally does NOT mirror the operational scan/translate/quality-retranslate
+# workflows: those stay GitHub-only so they don't double-run against the live
+# blog repos from two platforms at once. See AGENTS.md / docs/RUNBOOK.md.
+
+stages:
+  - test
+  - security
+  - lint
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+cache:
+  key: "$CI_COMMIT_REF_SLUG-pip"
+  paths:
+    - .cache/pip
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_COMMIT_BRANCH == "dev"'
+
+tests:
+  stage: test
+  image: python:3.13
+  variables:
+    PROFESSIONALIZE_BASE_URL: "http://ci.local"
+    PROFESSIONALIZE_LLM_MODEL: "ci-test-model"
+    METRICS_WEBHOOK_URL_TEAM: "http://ci.local"
+    METRICS_TOKEN_TEAM: "ci-test-token"
+    METRICS_API_KEY: "ci-test-key"
+  before_script:
+    - python -m pip install --upgrade pip
+    - pip install -r requirements.lock
+    - pip install pytest-cov
+  script:
+    # Baseline ~43%. Ratchet this number up as tests are added (next targets:
+    # translator.py chunking/retry paths, io_google_spreadsheet, scan_missing_translations).
+    - python -m pytest -q --cov=tools --cov-report=term-missing --cov-report=xml --cov-fail-under=40
+  artifacts:
+    when: always
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - coverage.xml
+    expire_in: 30 days
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+
+secret-scan:
+  stage: security
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache git grep bash
+  script:
+    - |
+      set -euo pipefail
+      fail=0
+
+      # 1. No workflow may reintroduce an environment dump (run: env)
+      if git grep -nE '^[[:space:]]*run:[[:space:]]*env[[:space:]]*$' -- '.github/workflows/*.yml'; then
+        echo "A workflow runs 'env' (dumps all environment variables to logs). Remove it."
+        fail=1
+      fi
+
+      # 2. No hardcoded secret-like strings in tracked source
+      if git grep -nE 'AIza[0-9A-Za-z_-]{10,}|sk-[A-Za-z0-9]{16,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|\?token=[A-Za-z0-9]' \
+           -- '*.py' '*.ts' '*.tsx' '*.mjs' '*.yml' ':!*.lock' ':!*.example'; then
+        echo "Possible hardcoded secret in tracked source. Move it to an env var / GitLab CI/CD variable."
+        fail=1
+      fi
+
+      if [ "$fail" -eq 0 ]; then
+        echo "OK — no env-dumps or hardcoded secrets found in tracked files."
+      fi
+      exit "$fail"
+
+dependency-scan:
+  stage: security
+  image: python:3.13
+  allow_failure: true  # non-blocking for now, same as ci.yml — flip once the report is clean
+  script:
+    - python -m pip install --upgrade pip pip-audit cyclonedx-bom
+    - pip-audit -r requirements.lock || true
+    - cyclonedx-py requirements requirements.lock -o sbom.json || cyclonedx-py -r -i requirements.lock -o sbom.json || true
+  artifacts:
+    when: always
+    paths:
+      - sbom.json
+    expire_in: 30 days
+
+lint:
+  stage: lint
+  image: python:3.13
+  allow_failure: true  # non-blocking for now, same as ci.yml — flip once the tree is clean
+  script:
+    - python -m pip install ruff
+    - ruff check .
