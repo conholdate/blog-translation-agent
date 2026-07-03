@@ -298,9 +298,13 @@ jobs:
           # Configure Git user for the commit (This is the only necessary manual config)
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
-          
+
+          # Sync with remote before committing — translation takes 10-30 min and the
+          # remote may have moved forward. Untracked translation files survive this safely.
+          git fetch origin
+          git merge --ff-only origin/$DEFAULT_BRANCH
+
           # Add all new or modified translation files to the staging area
-          # The action will commit these changes later.
           git add content/
           
           # Check if there are any staged changes to commit
