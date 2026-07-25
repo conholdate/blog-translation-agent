@@ -303,10 +303,10 @@ jobs:
         id: prep
         if: success()
         env:
-          GIT_COMMITTER_NAME: "Blogs Translation Agent"
-          GIT_COMMITTER_EMAIL: "actions@github.com" 
-          GIT_AUTHOR_NAME: "Blogs Translation Agent"
-          GIT_AUTHOR_EMAIL: "blogs-translation-agent@aspose.com"
+          GIT_AUTHOR_NAME: "shoaibkhan-aspose"
+          GIT_AUTHOR_EMAIL: "4299380+shoaibkhan-aspose@users.noreply.github.com"
+          GIT_COMMITTER_NAME: "shoaibkhan-aspose"
+          GIT_COMMITTER_EMAIL: "4299380+shoaibkhan-aspose@users.noreply.github.com"
         run: |
           # Move into the checked-out directory
           cd ${{ env.REPO_PATH }}
