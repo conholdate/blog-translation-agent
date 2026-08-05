@@ -145,13 +145,13 @@ validate_domain(domain, limit)
 └── for each unanalysed row in quality sheet:
     │
     ├── [skip if Error% AI already filled]
-    ├── [mark NA if Error% Heuristic = 0%]
+    ├── [mark NA if Error% Heuristic = 0%]  →  Error% AI = NA, AI Decision = NA
     │
     ├── sample up to 20 paragraphs from the translated file
-    ├── LLM call → returns Error% + up to 5 untranslated samples
-    ├── write Error% AI, Untranslated Samples, Analysed At
+    ├── LLM call → returns Error% + DECISION (RETRANSLATE/KEEP) + up to 5 untranslated samples
+    ├── write Error% AI, Untranslated Samples, AI Decision, Analysed At
     │
-    └── [if Status = Fixed]  →  write Error% after Fix instead
+    └── [if Status = Fixed]  →  write Error% after Fix instead (AI Decision still overwritten)
 │
 └── re-sort sheet by Error% AI descending
 ```
@@ -159,9 +159,9 @@ validate_domain(domain, limit)
 ### Control Flow — Step 4 (Retranslator)
 
 ```
-retranslate_domain(domain, threshold, limit)
+retranslate_domain(domain, limit)
 │
-└── for each row where Error% AI > threshold AND Status is blank:
+└── for each row where AI Decision = RETRANSLATE AND Status is blank:
     │
     ├── TranslationOrchestrator.translate_file()   # force-overwrites existing file
     └── update sheet: Status = "Fixed", Analysed At = now
@@ -194,9 +194,9 @@ retranslate_domain(domain, threshold, limit)
 
 Update `PROFESSIONALIZE_BASE_URL` and `PROFESSIONALIZE_LLM_MODEL` in `.env`. No code changes required.
 
-### Adjust quality threshold
+### Adjust the retranslation decision
 
-Pass `--threshold <N>` to `quality_retranslator.py`. Default is `70` (retranslate files with AI Error% above 70%).
+The retranslate/keep call is made by the LLM itself during Step 3 Phase B validation (`AI Decision` column), not by a locally configurable threshold in `quality_retranslator.py`. To change the criteria, edit the DECISION instructions in the validator's prompt in `tools/quality_agent/quality_validator.py`'s `_ai_error_pct()`. A numeric threshold (`FALLBACK_DECISION_THRESHOLD`, default `70`) still exists in that file, but only as a safety net used when the LLM's response can't be parsed or the call fails entirely.
 
 ### Batch large runs
 

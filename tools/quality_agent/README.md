@@ -1,6 +1,6 @@
 # Quality Pipeline — Steps 3 & 4
 
-This directory implements the last two steps of the **Blog Translation Agent**: checking the quality of all existing translations and retranslating any that fall below the threshold — ensuring every language version is genuinely translated and not just a copy of the English original.
+This directory implements the last two steps of the **Blog Translation Agent**: checking the quality of all existing translations and retranslating any the AI flags for retranslation — ensuring every language version is genuinely translated and not just a copy of the English original.
 
 ---
 
@@ -9,7 +9,7 @@ This directory implements the last two steps of the **Blog Translation Agent**: 
 | Step | Script(s) | What it does |
 |------|-----------|--------------|
 | **3 — Quality Check** | `quality_scanner.py` → `quality_validator.py` | Traverses all repos, computes a heuristic Error% per file (Phase A), then AI-validates flagged files (Phase B) — writes results to Google Sheets |
-| **4 — Retranslate** | `quality_retranslator.py` | Reads the quality sheet, force-retranslates files with AI Error% above the threshold via the Step 2 pipeline |
+| **4 — Retranslate** | `quality_retranslator.py` | Reads the quality sheet, force-retranslates files where AI Decision = RETRANSLATE via the Step 2 pipeline |
 
 Steps 1 & 2 (Scan and Translate) live in `tools/translation_agent/`. See the [root README](../../README.md) for the full pipeline.
 
@@ -107,6 +107,7 @@ Sheet IDs are loaded from environment variables (`QUALITY_SHEET_ID_*`) via `conf
 | 11 | Status | Retranslator / manual |
 | 12 | Error% after Fix | Validator (re-run after fix) |
 | 13 | Translated Page URL | Scanner |
+| 14 | AI Decision | Validator (`RETRANSLATE` / `KEEP` / `NA`) |
 
 ---
 
@@ -138,11 +139,12 @@ python quality_scanner.py --domain all --key sk-xxxxxxxxx
 
 Reads the quality sheet and AI-validates translations not yet analysed:
 
-- Rows where heuristic Error% is `0%` are marked `NA` immediately — no LLM call, no cost.
+- Rows where heuristic Error% is `0%` are marked `NA` immediately (both `Error% AI (LLM)` and `AI Decision`) — no LLM call, no cost.
 - For remaining rows: randomly samples up to 20 paragraphs and sends them to the LLM.
 - LLM calculates `(untranslated_words / total_words) * 100` as the Error% score.
+- LLM also decides `RETRANSLATE` or `KEEP` as part of the same response, based on its own judgment of the content — not a locally-derived threshold. (A threshold-based fallback is only used if the LLM call fails or its response can't be parsed.)
 - LLM also returns up to 5 specific untranslated sentences or phrases as samples.
-- Writes `Error% AI (LLM)`, `Untranslated Samples`, and `Analysed At` back to the sheet.
+- Writes `Error% AI (LLM)`, `Untranslated Samples`, `AI Decision`, and `Analysed At` back to the sheet.
 - Re-sorts the sheet by `Error% AI` descending so the worst translations are always at the top.
 - Safe to re-run — skips already-analysed rows.
 - On `Status = Fixed` rows: re-validates and fills the `Error% after Fix` column.
@@ -168,7 +170,7 @@ python quality_validator.py --domain all --limit 50 --key sk-xxxxxxxxx
 
 ## Step 4 — Quality Retranslator
 
-Reads the quality sheet and force-retranslates files where `Error% AI > threshold` and `Status` is blank. Uses the `TranslationOrchestrator` from Step 2 — no changes to the original translator required.
+Reads the quality sheet and force-retranslates files where `AI Decision == RETRANSLATE` and `Status` is blank. The decision comes from the LLM as part of the Step 3 Phase B validation pass, not a locally re-derived threshold. Uses the `TranslationOrchestrator` from Step 2 — no changes to the original translator required.
 
 After retranslation, sets `Status = Fixed` and updates `Analysed At`. The validator automatically picks up `Status = Fixed` rows on its next run to fill `Error% after Fix`.
 
@@ -180,7 +182,6 @@ python quality_retranslator.py --domain <DOMAIN> --key <API_KEY> [OPTIONS]
 |-----------|----------|-------------|
 | `--domain` | Yes | Target domain or `all` |
 | `--key` | No | LLM API key |
-| `--threshold` | No | Minimum AI Error% to trigger retranslation (default: `70`) |
 | `--limit` | No | Max rows to retranslate per domain in this run |
 
 **Examples:**
@@ -188,7 +189,7 @@ python quality_retranslator.py --domain <DOMAIN> --key <API_KEY> [OPTIONS]
 ```bash
 python quality_retranslator.py --domain blog.aspose.com --key sk-xxxxxxxxx
 python quality_retranslator.py --domain all --key sk-xxxxxxxxx
-python quality_retranslator.py --domain blog.aspose.com --threshold 50 --limit 10 --key sk-xxxxxxxxx
+python quality_retranslator.py --domain blog.aspose.com --limit 10 --key sk-xxxxxxxxx
 ```
 
 ---
@@ -247,7 +248,7 @@ zh-hant  Chinese (Traditional)
 
 **`index.md` not found for a row** — The local blog repository may be out of date. Pull the latest changes from the remote.
 
-**Retranslator skips a row that looks wrong** — Check that `Status` is blank and `Error% AI` is above the threshold. Rows with any non-blank status (e.g. `Fixed`, `NA`) are not retranslated.
+**Retranslator skips a row that looks wrong** — Check that `Status` is blank and `AI Decision` is `RETRANSLATE`. Rows with any non-blank status (e.g. `Fixed`, `NA`) or `AI Decision = KEEP`/`NA` are not retranslated.
 
 **Validator re-processes already-analysed rows** — This should not happen. If `Error% AI` is filled, the validator skips the row. If the column appears blank in the sheet, check for invisible whitespace.
 

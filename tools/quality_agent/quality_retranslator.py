@@ -1,8 +1,8 @@
 """
 Translation Quality Retranslator  (Phase 3)
 ============================================
-Reads the quality sheet, finds rows where Error% AI (LLM) is above a
-threshold and Status is blank, then force-retranslates those files using
+Reads the quality sheet, finds rows where the LLM's AI Decision is
+RETRANSLATE and Status is blank, then force-retranslates those files using
 the existing TranslationOrchestrator from translator.py.
 
 After retranslation each row's Status is set to "Fixed" so the validator
@@ -10,7 +10,7 @@ After retranslation each row's Status is set to "Fixed" so the validator
 
 Usage:
     python quality_retranslator.py --domain blog.aspose.com --key YOUR_KEY
-    python quality_retranslator.py --domain all --threshold 50 --key YOUR_KEY
+    python quality_retranslator.py --domain all --key YOUR_KEY
     python quality_retranslator.py --domain blog.aspose.com --limit 10 --key YOUR_KEY
 """
 
@@ -58,13 +58,12 @@ COL_ANALYSED_AT         = 10
 COL_STATUS              = 11
 COL_ERROR_AFTER         = 12
 COL_TRANSLATED_URL      = 13
+COL_AI_DECISION         = 14
 
 DATA_ROW_OFFSET = 3     # rows 1–2 are lang-support line + headers
 
 STATUS_EMPTY  = ""
 STATUS_FIXED  = "Fixed"
-
-DEFAULT_THRESHOLD = 70  # retranslate rows with AI Error% above this value
 
 # Module-level orchestrator — initialised once in _run() and reused by the tool
 _orchestrator: TranslationOrchestrator = None
@@ -75,18 +74,17 @@ _orchestrator: TranslationOrchestrator = None
 # ============================================================================
 
 @function_tool
-def retranslate_domain(domain: str, threshold: int = DEFAULT_THRESHOLD, limit: int = 0) -> str:
+def retranslate_domain(domain: str, limit: int = 0) -> str:
     """
     For the given blog domain:
       1. Read the quality sheet.
-      2. Filter rows: Error% AI > threshold AND Status is blank.
+      2. Filter rows: AI Decision == RETRANSLATE AND Status is blank.
       3. For each row: force-retranslate index.{lang}.md using TranslationOrchestrator.
       4. Update the sheet row: Status = "Fixed", Analysed At = now.
 
     Args:
-        domain:    e.g. 'blog.aspose.com'
-        threshold: Minimum AI Error% to trigger retranslation (default 70)
-        limit:     Max rows to retranslate in this run (0 = no limit)
+        domain: e.g. 'blog.aspose.com'
+        limit:  Max rows to retranslate in this run (0 = no limit)
 
     Returns a summary string.
     """
@@ -99,7 +97,7 @@ def retranslate_domain(domain: str, threshold: int = DEFAULT_THRESHOLD, limit: i
     repo_path = config.domains_data[domain][config.KEY_LOCAL_GITHUB_REPO]
 
     print(f"\n{'='*60}")
-    print(f"  Retranslating: {domain}  (AI Error% > {threshold}%)")
+    print(f"  Retranslating: {domain}  (AI Decision = RETRANSLATE)")
     print(f"{'='*60}")
 
     # ── 1. Read sheet ──────────────────────────────────────────────────────
@@ -113,7 +111,7 @@ def retranslate_domain(domain: str, threshold: int = DEFAULT_THRESHOLD, limit: i
     to_process = [
         r for r in data_rows
         if r["status"] == STATUS_EMPTY
-        and _pct_to_float(r["error_ai"]) > threshold
+        and r["ai_decision"].strip().upper() == "RETRANSLATE"
     ]
 
     if limit > 0:
@@ -184,25 +182,19 @@ def _read_worksheet(sheet_id: str) -> tuple:
 
     data_rows = []
     for idx, row in enumerate(all_values[DATA_ROW_OFFSET - 1:], start=DATA_ROW_OFFSET):
-        while len(row) < COL_TRANSLATED_URL:
+        while len(row) < COL_AI_DECISION:
             row.append("")
         data_rows.append({
-            "sheet_row":  idx,
-            "product":    row[COL_PRODUCT   - 1],
-            "slug":       row[COL_SLUG      - 1],
-            "lang":       row[COL_LANG      - 1],
-            "error_ai":   row[COL_ERROR_AI  - 1],
-            "status":     row[COL_STATUS    - 1],
+            "sheet_row":   idx,
+            "product":     row[COL_PRODUCT      - 1],
+            "slug":        row[COL_SLUG         - 1],
+            "lang":        row[COL_LANG         - 1],
+            "error_ai":    row[COL_ERROR_AI     - 1],
+            "status":      row[COL_STATUS       - 1],
+            "ai_decision": row[COL_AI_DECISION  - 1],
         })
 
     return ws, data_rows
-
-
-def _pct_to_float(value: str) -> float:
-    try:
-        return float(value.replace('%', '').strip())
-    except (ValueError, AttributeError):
-        return 0.0
 
 
 # ============================================================================
@@ -214,7 +206,7 @@ retranslator_agent = Agent(
     instructions=(
         "You are a translation quality retranslator. "
         "For each domain the user specifies, call the retranslate_domain tool exactly once. "
-        "Pass the threshold and limit arguments if the user provided them. "
+        "Pass the limit argument if the user provided one. "
         "After all domains are done, report a brief summary."
     ),
     tools=[retranslate_domain],
@@ -226,7 +218,7 @@ retranslator_agent = Agent(
 # ENTRY POINT
 # ============================================================================
 
-async def _run(domains: list[str], api_key: str, threshold: int, limit: int):
+async def _run(domains: list[str], api_key: str, limit: int):
     global _orchestrator
     _orchestrator = TranslationOrchestrator(api_key=api_key)
 
@@ -239,14 +231,13 @@ async def _run(domains: list[str], api_key: str, threshold: int, limit: int):
     domain_list  = ", ".join(domains)
     limit_note   = f" (limit {limit} per domain)" if limit > 0 else ""
     prompt       = (
-        f"Retranslate poor-quality translations for these blog domains{limit_note}: {domain_list}. "
-        f"Use threshold={threshold}."
+        f"Retranslate poor-quality translations for these blog domains{limit_note}: {domain_list}."
         + (f" Use limit={limit}." if limit > 0 else "")
     )
 
     print(f"\n🚀 Quality Retranslator Agent starting ...")
     print(f"   Domains   : {domain_list}")
-    print(f"   Threshold : AI Error% > {threshold}%")
+    print(f"   Selection : AI Decision = RETRANSLATE")
     if limit:
         print(f"   Limit     : {limit} rows per domain")
 
@@ -263,8 +254,6 @@ def main():
                         help=f"Domain to process or 'all'. Options: {', '.join(all_domains)}")
     parser.add_argument("--key",       required=False,
                         help="Professionalize LLM API key (or set PROFESSIONALIZE_API_KEY env var)")
-    parser.add_argument("--threshold", type=int, default=DEFAULT_THRESHOLD,
-                        help=f"Minimum AI Error%% to trigger retranslation (default {DEFAULT_THRESHOLD})")
     parser.add_argument("--limit",     type=int, default=0,
                         help="Max rows to retranslate per domain (0 = no limit)")
     args = parser.parse_args()
@@ -284,7 +273,7 @@ def main():
         print(f"Valid: all, {', '.join(all_domains)}")
         sys.exit(1)
 
-    asyncio.run(_run(selected, api_key, args.threshold, args.limit))
+    asyncio.run(_run(selected, api_key, args.limit))
 
 
 if __name__ == "__main__":

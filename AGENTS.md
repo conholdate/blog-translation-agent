@@ -93,11 +93,11 @@ Blog Translation Agent
       3. Write results to quality Google Sheet
     Phase B — Validator
       1. Read quality sheet rows
-      2. Run AI-based Error% check on flagged files (read-only on files)
-      3. Update Error% AI and Analysed At cells in sheet
+      2. Run AI-based Error% + RETRANSLATE/KEEP decision check on flagged files (read-only on files)
+      3. Update Error% AI, AI Decision, and Analysed At cells in sheet
 
   Step 4 — Retranslate
-    1. Read quality sheet for files above error threshold
+    1. Read quality sheet for files with AI Decision = RETRANSLATE
     2. Re-translate file via Step 2 pipeline
     3. Write corrected index.{lang}.md to blog-checkedout-repo/content/...
     4. Update Status and Analysed At cells in sheet

@@ -13,7 +13,7 @@ The agent runs a four-step pipeline:
 | **1. Scan** | Walks all blog repositories daily, detects every post missing a translated version, and reports results to Google Sheets |
 | **2. Translate** | Reads the scan results and fills in missing translations using an LLM — preserving formatting, code blocks, and front matter |
 | **3. Quality Check** | Scores all existing translations for accuracy using a heuristic pass followed by AI analysis |
-| **4. Retranslate** | Automatically re-translates any post whose quality score falls below the configured threshold |
+| **4. Retranslate** | Automatically re-translates any post the AI validator flags for retranslation |
 
 ---
 

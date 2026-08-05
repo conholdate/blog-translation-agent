@@ -48,7 +48,7 @@ QUALITY_SHEET_IDS: dict[str, str] = {
 SHEET_HEADERS = [
     "Domain", "Product", "Blog Post Directory", "Blog Post URL",
     "Author", "Page Lang", "Error% Heuristic", "Error% AI (LLM)", "Untranslated Samples",
-    "Analysed At", "Status", "Error% after Fix", "Translated Page URL",
+    "Analysed At", "Status", "Error% after Fix", "Translated Page URL", "AI Decision",
 ]
 
 STATUS_EMPTY = ""
@@ -134,6 +134,7 @@ def scan_domain(domain: str) -> str:
                     STATUS_EMPTY,           # Status                (col 11)
                     "",                     # Error% after Fix      (col 12) — filled after human fix
                     translated_url,         # Translated Page URL   (col 13)
+                    "",                     # AI Decision           (col 14) — filled by validator
                 ])
 
     # Sort by Error% descending so highest-error pages appear at the top

@@ -62,6 +62,7 @@ COL_ANALYSED_AT         = 10  # "Analysed At"             — timestamp written 
 COL_STATUS              = 11  # "Status"                  — blank / Fixed (set manually by human)
 COL_ERROR_AFTER         = 12  # "Error% after Fix"        — written by validator after human fix
 COL_TRANSLATED_URL      = 13  # "Translated Page URL"     — domain/lang/post_url
+COL_AI_DECISION         = 14  # "AI Decision"             — RETRANSLATE / KEEP / NA, written by validator (Phase 2)
 
 # Sheet row offsets
 # Row 1 = language-support line  (written by write_to_google_spreadsheet)
@@ -74,6 +75,10 @@ STATUS_FIXED = "Fixed"
 
 # Paragraph sample size for AI check (cost control)
 AI_SAMPLE_PARAGRAPHS = 20
+
+# Safety-net only: used to derive a DECISION when the LLM's response can't be parsed,
+# or the LLM call fails entirely. The primary decision always comes from the LLM itself.
+FALLBACK_DECISION_THRESHOLD = 70
 
 # Module-level sync client — initialised in main() before the agent runs
 _llm_client: OpenAI = None
@@ -158,6 +163,7 @@ def validate_domain(domain: str, limit: int = 0) -> str:
         # Skip AI call if heuristic says 0% — translation looks fine
         if heuristic_pct == 0.0:
             ws.update_cell(sheet_row, COL_ERROR_AI,     "NA")
+            ws.update_cell(sheet_row, COL_AI_DECISION,  "NA")
             ws.update_cell(sheet_row, COL_ANALYSED_AT,  timestamp)
             print(f"  ⏭️  {product}/{slug} [{lang}]  Heuristic=0% → AI=NA  [{timestamp}]")
             updated += 1
@@ -165,7 +171,7 @@ def validate_domain(domain: str, limit: int = 0) -> str:
 
         # AI error estimate
         try:
-            error_pct, untranslated_samples = _ai_error_pct(original_path, translated_path, lang)
+            error_pct, untranslated_samples, decision = _ai_error_pct(original_path, translated_path, lang)
         except Exception as e:
             print(f"  ❌ AI check failed for {slug}/{lang}: {e}")
             failed += 1
@@ -176,8 +182,9 @@ def validate_domain(domain: str, limit: int = 0) -> str:
 
         ws.update_cell(sheet_row, target_col,              pct_str)
         ws.update_cell(sheet_row, COL_UNTRANSLATED_SAMPLES, untranslated_samples)
+        ws.update_cell(sheet_row, COL_AI_DECISION,          decision)
         ws.update_cell(sheet_row, COL_ANALYSED_AT,          timestamp)
-        print(f"  ✅ {product}/{slug} [{lang}]  {status} → Error%: {pct_str}  [{timestamp}]")
+        print(f"  ✅ {product}/{slug} [{lang}]  {status} → Error%: {pct_str}  Decision: {decision}  [{timestamp}]")
         updated += 1
 
     # ── 4. Sort sheet by Error% descending ─────────────────────────────────
@@ -209,6 +216,7 @@ def _read_worksheet(sheet_id: str) -> tuple:
         error_pct  – col 7
         status     – col 8
         error_after– col 9
+        ai_decision– col 14
     """
     try:
         gc = get_gc()
@@ -224,7 +232,7 @@ def _read_worksheet(sheet_id: str) -> tuple:
     data_rows = []
     for idx, row in enumerate(all_values[DATA_ROW_OFFSET - 1:], start=DATA_ROW_OFFSET):
         # Pad short rows so index access is safe
-        while len(row) < COL_TRANSLATED_URL:
+        while len(row) < COL_AI_DECISION:
             row.append("")
         data_rows.append({
             "sheet_row":            idx,
@@ -240,6 +248,7 @@ def _read_worksheet(sheet_id: str) -> tuple:
             "status":               row[COL_STATUS               - 1],
             "error_after":          row[COL_ERROR_AFTER          - 1],
             "translated_url":       row[COL_TRANSLATED_URL       - 1],
+            "ai_decision":          row[COL_AI_DECISION          - 1],
         })
 
     return ws, data_rows
@@ -256,7 +265,7 @@ def _sort_sheet_by_error_pct(ws: gspread.Worksheet) -> None:
 
         data.sort(key=lambda r: _pct_to_float(r[COL_ERROR_AI - 1] if len(r) >= COL_ERROR_AI else ""), reverse=True)
 
-        last_col_letter = chr(ord('A') + COL_TRANSLATED_URL - 1)
+        last_col_letter = chr(ord('A') + COL_AI_DECISION - 1)
         last_row = DATA_ROW_OFFSET + len(data) - 1
         cell_range = f"A{DATA_ROW_OFFSET}:{last_col_letter}{last_row}"
         ws.update(cell_range, data)
@@ -276,14 +285,15 @@ def _pct_to_float(value: str) -> float:
 # AI QUALITY CHECK
 # ============================================================================
 
-def _ai_error_pct(original_file: Path, translated_file: Path, lang: str) -> tuple[float, str]:
+def _ai_error_pct(original_file: Path, translated_file: Path, lang: str) -> tuple[float, str, str]:
     """
     Sample up to AI_SAMPLE_PARAGRAPHS paragraph pairs and ask the LLM:
       - what % of the translated text is still in English
+      - whether the file should be retranslated
       - which specific snippets were NOT translated
 
     Falls back to the heuristic if the LLM call fails.
-    Returns (error_pct: float, untranslated_samples: str).
+    Returns (error_pct: float, untranslated_samples: str, decision: str).
     """
     orig_body  = _strip_frontmatter(original_file.read_text(encoding="utf-8-sig"))
     trans_body = _strip_frontmatter(translated_file.read_text(encoding="utf-8-sig"))
@@ -295,7 +305,7 @@ def _ai_error_pct(original_file: Path, translated_file: Path, lang: str) -> tupl
 
     pairs = list(zip(orig_paras, trans_paras))
     if not pairs:
-        return 0.0, ""
+        return 0.0, "", "KEEP"
 
     # Sample
     sample = random.sample(pairs, min(AI_SAMPLE_PARAGRAPHS, len(pairs)))
@@ -307,13 +317,19 @@ Review it and:
 1. Count the total number of words in the TEXT (excluding code blocks, URLs, tags, categories, author names, abbreviations and file formats like HTML/REST/PDF, and brand/product names like Aspose.PDF/GroupDocs.Conversion/Conholdate.Total).
    Then count how many of those words are still in English and were NOT translated.
    Calculate: SCORE = (untranslated_words / total_words) * 100, rounded to nearest integer.
-2. List the specific sentences or phrases (up to 5, one per line, one first 100 chars of each sentence) that were NOT translated.
+2. Decide whether this page should be retranslated: respond DECISION: RETRANSLATE if a meaningful
+   portion of the content is still untranslated or the translation quality is poor enough that an
+   editor would want it redone; otherwise respond DECISION: KEEP. Base this on your overall judgment
+   of the content, not solely on the SCORE number (e.g. only untranslated brand/product names should
+   not by themselves trigger RETRANSLATE).
+3. List the specific sentences or phrases (up to 5, one per line, one first 100 chars of each sentence) that were NOT translated.
 
 Content sample:
 {sampled_text}
 
 Respond in EXACTLY this format (no extra text):
 SCORE: <integer 0-100>
+DECISION: <RETRANSLATE or KEEP>
 UNTRANSLATED:
 <snippet 1>
 <snippet 2>
@@ -332,20 +348,23 @@ UNTRANSLATED:
         raw = (response.choices[0].message.content or "").strip()
         print(f"  🤖  AI Response:\n{raw}\n")
 
-        error_pct, samples = _parse_ai_response(raw)
-        return error_pct, samples
+        error_pct, samples, decision = _parse_ai_response(raw)
+        return error_pct, samples, decision
 
     except Exception as e:
         print(f"    ⚠️  AI call failed ({e}), falling back to heuristic")
-        return _heuristic_error_pct_simple(pairs), ""
+        fallback_pct, fallback_samples = _heuristic_error_pct_simple(pairs)
+        fallback_decision = "RETRANSLATE" if fallback_pct > FALLBACK_DECISION_THRESHOLD else "KEEP"
+        return fallback_pct, fallback_samples, fallback_decision
 
 
-def _parse_ai_response(raw: str) -> tuple[float, str]:
+def _parse_ai_response(raw: str) -> tuple[float, str, str]:
     """
-    Parse the structured AI response into (error_pct, untranslated_samples_string).
+    Parse the structured AI response into (error_pct, untranslated_samples_string, decision).
 
     Expected format:
         SCORE: 45
+        DECISION: RETRANSLATE
         UNTRANSLATED:
         This text was not translated
         Another English snippet here
@@ -357,12 +376,19 @@ def _parse_ai_response(raw: str) -> tuple[float, str]:
     if score_match:
         error_pct = min(100.0, max(0.0, float(score_match.group(1))))
 
+    decision_match = re.search(r'DECISION:\s*(RETRANSLATE|KEEP)', raw, re.IGNORECASE)
+    if decision_match:
+        decision = decision_match.group(1).upper()
+    else:
+        # Safety net: LLM didn't follow the format — derive from SCORE.
+        decision = "RETRANSLATE" if error_pct > FALLBACK_DECISION_THRESHOLD else "KEEP"
+
     untranslated_match = re.search(r'UNTRANSLATED:\s*\n(.*)', raw, re.IGNORECASE | re.DOTALL)
     if untranslated_match:
         lines = [l.strip() for l in untranslated_match.group(1).splitlines() if l.strip()]
         samples = " | ".join(lines[:5])   # pipe-separated, max 5, fits in a single cell
 
-    return error_pct, samples
+    return error_pct, samples, decision
 
 
 def _heuristic_error_pct_simple(pairs: list[tuple[str, str]]) -> tuple[float, str]:

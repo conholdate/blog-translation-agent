@@ -56,7 +56,7 @@ One agent. Four pipeline steps. Two implementation directories.
 |-----------|------|----------------|
 | Scanner | `quality_scanner.py` | Step 3, Phase A — heuristic word-overlap Error% per translated file; writes one row per file to quality sheet |
 | Validator | `quality_validator.py` | Step 3, Phase B — AI-based Error% via LLM; samples 20 paragraphs; back-fills sheet |
-| Retranslator | `quality_retranslator.py` | Step 4 — force-retranslates files above error threshold via `TranslationOrchestrator` |
+| Retranslator | `quality_retranslator.py` | Step 4 — force-retranslates files flagged `RETRANSLATE` by the AI validator via `TranslationOrchestrator` |
 | Language Guard | `lang_guard.py` | Language code normalization, validation, RTL detection, translation heuristics |
 
 ---

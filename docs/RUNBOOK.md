@@ -54,7 +54,7 @@ After rotation, trigger one `workflow_dispatch` run with a small `limit` to conf
 
 The agent only writes language variants (`index.{lang}.md`) — it never modifies the English source (`index.md`).
 
-- **Bad translation committed to a blog repo:** revert the specific file(s) in that repo (`git revert` / restore previous `index.{lang}.md`). The next quality-validator pass re-checks and the retranslator will re-fix if it is still above threshold.
+- **Bad translation committed to a blog repo:** revert the specific file(s) in that repo (`git revert` / restore previous `index.{lang}.md`). The next quality-validator pass re-checks and the retranslator will re-fix if the AI Decision is still `RETRANSLATE`.
 - **Corrupted batch:** identify the run via `run_id` in metrics / the `history` tab, then re-run only the affected domain/product with a `limit`.
 - **Sheet state wrong:** the per-domain scan tab is overwritten on each scan; re-running the scanner rebuilds it. The `history` tab is append-only — correct forward, do not delete rows.
 
