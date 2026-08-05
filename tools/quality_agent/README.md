@@ -108,6 +108,7 @@ Sheet IDs are loaded from environment variables (`QUALITY_SHEET_ID_*`) via `conf
 | 12 | Error% after Fix | Validator (re-run after fix) |
 | 13 | Translated Page URL | Scanner |
 | 14 | AI Decision | Validator (`RETRANSLATE` / `KEEP` / `NA`) |
+| 15 | AI Decision Reason | Validator (short phrase, e.g. "found untranslated sentences") |
 
 ---
 
@@ -139,12 +140,13 @@ python quality_scanner.py --domain all --key sk-xxxxxxxxx
 
 Reads the quality sheet and AI-validates translations not yet analysed:
 
-- Rows where heuristic Error% is `0%` are marked `NA` immediately (both `Error% AI (LLM)` and `AI Decision`) — no LLM call, no cost.
+- Rows where heuristic Error% is `0%` are marked `NA` immediately (`Error% AI (LLM)`, `AI Decision`, and `AI Decision Reason` all set) — no LLM call, no cost.
 - For remaining rows: randomly samples up to 20 paragraphs and sends them to the LLM.
 - LLM calculates `(untranslated_words / total_words) * 100` as the Error% score.
 - LLM also decides `RETRANSLATE` or `KEEP` as part of the same response, based on its own judgment of the content — not a locally-derived threshold. (A threshold-based fallback is only used if the LLM call fails or its response can't be parsed.)
+- LLM also gives a short reason for its decision (e.g. "found untranslated sentences", "only brand names untranslated", "well translated").
 - LLM also returns up to 5 specific untranslated sentences or phrases as samples.
-- Writes `Error% AI (LLM)`, `Untranslated Samples`, `AI Decision`, and `Analysed At` back to the sheet.
+- Writes `Error% AI (LLM)`, `Untranslated Samples`, `AI Decision`, `AI Decision Reason`, and `Analysed At` back to the sheet.
 - Re-sorts the sheet by `Error% AI` descending so the worst translations are always at the top.
 - Safe to re-run — skips already-analysed rows.
 - On `Status = Fixed` rows: re-validates and fills the `Error% after Fix` column.

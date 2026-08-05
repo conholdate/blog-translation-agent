@@ -59,6 +59,7 @@ COL_STATUS              = 11
 COL_ERROR_AFTER         = 12
 COL_TRANSLATED_URL      = 13
 COL_AI_DECISION         = 14
+COL_DECISION_REASON     = 15  # not read here, kept for column-layout sync with quality_scanner.py
 
 DATA_ROW_OFFSET = 3     # rows 1–2 are lang-support line + headers
 

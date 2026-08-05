@@ -145,13 +145,13 @@ validate_domain(domain, limit)
 └── for each unanalysed row in quality sheet:
     │
     ├── [skip if Error% AI already filled]
-    ├── [mark NA if Error% Heuristic = 0%]  →  Error% AI = NA, AI Decision = NA
+    ├── [mark NA if Error% Heuristic = 0%]  →  Error% AI = NA, AI Decision = NA, AI Decision Reason = fixed text
     │
     ├── sample up to 20 paragraphs from the translated file
-    ├── LLM call → returns Error% + DECISION (RETRANSLATE/KEEP) + up to 5 untranslated samples
-    ├── write Error% AI, Untranslated Samples, AI Decision, Analysed At
+    ├── LLM call → returns Error% + DECISION (RETRANSLATE/KEEP) + short REASON + up to 5 untranslated samples
+    ├── write Error% AI, Untranslated Samples, AI Decision, AI Decision Reason, Analysed At
     │
-    └── [if Status = Fixed]  →  write Error% after Fix instead (AI Decision still overwritten)
+    └── [if Status = Fixed]  →  write Error% after Fix instead (AI Decision/Reason still overwritten)
 │
 └── re-sort sheet by Error% AI descending
 ```
