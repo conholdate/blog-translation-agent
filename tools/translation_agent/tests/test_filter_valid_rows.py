@@ -15,9 +15,9 @@ from translator import filter_valid_rows
 # ---------------------------------------------------------------------------
 
 def make_row(domain="blog.aspose.com", product="email", slug="my-post",
-             url="/email/my-post/", author="John", extra="", langs="ar, fr"):
-    """Return a well-formed 7-column row."""
-    return [domain, product, slug, url, author, extra, langs]
+             url="/email/my-post/", author="John", issue="", count="2", langs="ar, fr"):
+    """Return a well-formed 8-column row (domain, product, slug, url, author, issue, count, langs)."""
+    return [domain, product, slug, url, author, issue, count, langs]
 
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ def test_empty_list_returns_empty():
 
 
 def test_sentinel_row_is_filtered_out():
-    sentinel = ["!!! NO MISSING TRANSLATION FOUND !!!", "", "", "", "", "", ""]
+    sentinel = ["!!! NO MISSING TRANSLATION FOUND !!!", "", "", "", "", "", "", ""]
     assert filter_valid_rows([sentinel]) == []
 
 
@@ -85,12 +85,12 @@ def test_row_with_whitespace_langs_filtered():
 
 
 def test_row_with_too_few_columns_filtered():
-    short_row = ["blog.aspose.com", "email", "my-post"]  # only 3 cols, needs > 6
+    short_row = ["blog.aspose.com", "email", "my-post"]  # only 3 cols, needs > 7
     assert filter_valid_rows([short_row]) == []
 
 
-def test_row_with_exactly_6_columns_filtered():
-    row = ["blog.aspose.com", "email", "my-post", "/url/", "Author", "extra"]
+def test_row_with_exactly_7_columns_filtered():
+    row = ["blog.aspose.com", "email", "my-post", "/url/", "Author", "", "2"]  # 7 cols, needs > 7
     assert filter_valid_rows([row]) == []
 
 
@@ -99,14 +99,14 @@ def test_row_with_exactly_6_columns_filtered():
 # ---------------------------------------------------------------------------
 
 def test_sentinel_mixed_with_valid_rows():
-    sentinel = ["!!! NO MISSING TRANSLATION FOUND !!!", "", "", "", "", "", ""]
+    sentinel = ["!!! NO MISSING TRANSLATION FOUND !!!", "", "", "", "", "", "", ""]
     valid = make_row()
     result = filter_valid_rows([sentinel, valid])
     assert result == [valid]
 
 
 def test_blank_row_mixed_with_valid_rows():
-    blank = ["", "", "", "", "", "", ""]
+    blank = ["", "", "", "", "", "", "", ""]
     valid = make_row()
     result = filter_valid_rows([blank, valid])
     assert result == [valid]

@@ -216,6 +216,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                         item[config.KEY_DIR_BASE],
                         (f"{domain}{item[config.KEY_POST_URL]}"),
                         item[config.KEY_AUTHOR],
+                        "",  # Issue column, can be filled manually later
                         item[config.KEY_MISSING_COUNT],
                         ", ".join(item[config.KEY_MISSING_FILES]),  # Convert list to string
                         ", ".join(item[config.KEY_EXTRA_FILES]),  # Convert list to string

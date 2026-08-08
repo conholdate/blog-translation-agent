@@ -10,7 +10,7 @@ The scanner writes to two places on every run:
 
 **1. Per-domain tab** (`TRANSLATION_SCAN_SHEET_ID` — tab named by domain)
 - Cleared and rewritten on each scan — always shows current missing translations only
-- Columns: Scan Date, Domain, Product, Blog Post Directory, Blog Post URL, Author, Missing Count, Missing Translations, Extra Translations, Status
+- Columns: Scan Date, Domain, Product, Blog Post Directory, Blog Post URL, Author, Issue, Count, Target Translations, Action, Extra Files Count, Status
 
 **2. History tab** (append-only, never cleared)
 - One row per blog post per detection event, keyed by `(domain, slug)`

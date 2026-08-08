@@ -175,9 +175,10 @@ KEY_PRODUCT_NAME    = "Product"
 KEY_DIR_BASE        = "Blog Post Directory"
 KEY_POST_URL        = "Blog Post URL"
 KEY_AUTHOR          = "Author"
-KEY_MISSING_COUNT   = "Missing Count"
-KEY_MISSING_FILES   = "Missing Translations"
-KEY_EXTRA_FILES     = "Extra Translations"
+KEY_ISSUE           = "Issue"
+KEY_MISSING_COUNT   = "Count"
+KEY_MISSING_FILES   = "Target Translations"
+KEY_EXTRA_FILES     = "Action"
 KEY_EXTRA_COUNT     = "Extra Files Count"
 KEY_STATUS          = "Status"
 
@@ -188,12 +189,13 @@ KEY_INVALID_FOLDER_COUNT= "Invalid Folder Count"
 KEY_AUTHORS             = "Authors"
 KEY_SPREADSHEET_LINK    = "Details Spreadsheet"
 
-HEADERS_MISSING_TRANSLATIONS = [ 
+HEADERS_MISSING_TRANSLATIONS = [
     KEY_DOMAIN,
     KEY_PRODUCT_NAME,
     KEY_DIR_BASE,
     KEY_POST_URL,
     KEY_AUTHOR,
+    KEY_ISSUE,
     KEY_MISSING_COUNT,
     KEY_MISSING_FILES,
     KEY_EXTRA_FILES,

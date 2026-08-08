@@ -159,7 +159,7 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
     Update the history tab with the latest scan results for a domain.
 
     current_rows must match HEADERS_MISSING_TRANSLATIONS column order:
-    [domain, product, slug, url, author, missing_count, missing_langs, extra, extra_count, status]
+    [domain, product, slug, url, author, issue, missing_count, missing_langs, extra, extra_count, status]
 
     Logic per existing history row (Status != completed):
       - Post gone from current scan   → Status = completed, Completed Date = scan_date
@@ -185,12 +185,12 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
         C_DONE    = 9
 
         # Build lookup from current scan keyed by (domain, slug)
-        # current_rows: [domain(0), product(1), slug(2), url(3), author(4),
-        #                missing_count(5), missing_langs(6), extra(7), extra_count(8), status(9)]
+        # current_rows: [domain(0), product(1), slug(2), url(3), author(4), issue(5),
+        #                missing_count(6), missing_langs(7), extra(8), extra_count(9), status(10)]
         current_lookup = {
             (r[0], r[2]): r
             for r in current_rows
-            if len(r) >= 7 and r[0] and r[2]
+            if len(r) >= 8 and r[0] and r[2]
         }
 
         batch_updates = []
@@ -211,7 +211,7 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
             if key in current_lookup:
                 cur = current_lookup[key]
                 # Languages still missing across the whole post (from current scan)
-                cur_langs  = {l.strip() for l in str(cur[6]).split(",") if l.strip()}
+                cur_langs  = {l.strip() for l in str(cur[7]).split(",") if l.strip()}
                 # Languages this specific history row was tracking
                 hist_langs = {l.strip() for l in row[C_LANGS].split(",")  if l.strip()}
 
@@ -244,10 +244,10 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
         new_rows = [
             [
                 scan_date, r[0], r[1], r[2], r[3], r[4],
-                r[6], str(r[5]), HISTORY_STATUS_PENDING, "",
+                r[7], str(r[6]), HISTORY_STATUS_PENDING, "",
             ]
             for r in current_rows
-            if len(r) >= 7 and r[0] and r[2]
+            if len(r) >= 8 and r[0] and r[2]
             and (r[0], r[2]) not in seen_keys
         ]
 

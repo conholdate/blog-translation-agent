@@ -926,11 +926,11 @@ class TranslationOrchestrator:
                 slug = item[2]
                 post_url = item[3]
                 post_author = item[4]
-                missed_langs = discovery_list = [x.strip() for x in item[6].split(',')]
+                missed_langs = discovery_list = [x.strip() for x in item[7].split(',')]
 
                 print(f"✅ Translating: {item}")
                 print(f"\n{'='*60}")
-                print(f"{product}\t>\t{slug}\tby\t>\t{post_author}\tinto\t{item[6]}")
+                print(f"{product}\t>\t{slug}\tby\t>\t{post_author}\tinto\t{item[7]}")
                 print(f"\n{'='*60}")
 
                 missing_translations_stats.items_discovered += len(missed_langs)
@@ -1184,20 +1184,20 @@ def filter_valid_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
       col 0 — domain
       col 1 — product
       col 2 — slug
-      col 6 — missing languages
+      col 7 — missing languages
 
     Filters out sentinel rows (e.g. '!!! NO MISSING TRANSLATION FOUND !!!'),
-    blank rows, and any row with fewer than 7 columns.
+    blank rows, and any row with fewer than 8 columns.
     """
     if not posts_list:
         return posts_list
     return [
         row for row in posts_list
-        if len(row) > 6
+        if len(row) > 7
         and str(row[0]).strip()  # domain
         and str(row[1]).strip()  # product
         and str(row[2]).strip()  # slug
-        and str(row[6]).strip()  # missing langs
+        and str(row[7]).strip()  # missing langs
     ]
 
 
