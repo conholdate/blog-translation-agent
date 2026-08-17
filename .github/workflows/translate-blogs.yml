@@ -36,6 +36,7 @@ on:
           - Aspose.GIS
           - Aspose.HTML
           - Aspose.Imaging
+          - Aspose.LLM
           - Aspose.Note
           - Aspose.OCR
           - Aspose.OMR
