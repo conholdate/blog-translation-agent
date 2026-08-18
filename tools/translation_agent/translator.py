@@ -953,6 +953,13 @@ class TranslationOrchestrator:
                 parsed = parse_markdown_file(index_md_file_path)
                 frontmatter = parsed['frontmatter']
                 post_content = parsed['content']
+
+                # Draft posts aren't final yet and won't be re-synced into existing
+                # translations once published, so skip translating them altogether.
+                if frontmatter.get('draft') is True:
+                    print(f"⚠️  Skipping {slug}: source index.md is marked draft: true")
+                    continue
+
                 full_content = f"---\n{yaml.dump(frontmatter, allow_unicode=True, sort_keys=False, default_flow_style=False)}---\n\n{post_content}"
                 identified_platform = self.platform_agent.identify_platform(full_content)
                 print(f"   🏷️  Identified Platform: {identified_platform}")

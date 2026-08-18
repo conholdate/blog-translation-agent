@@ -365,6 +365,7 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
     # author_regex = re.compile(r'author:\s*"?([^"]+)"?')  # Matches author: "Name" or author: Name
     author_regex    = re.compile(r"author:\s*['\"]?([^'\"]+)['\"]?")
     url_regex       = re.compile(r"url:\s*['\"]?([^\s'\"]+)['\"]?")
+    draft_regex     = re.compile(r"^draft:\s*['\"]?true['\"]?\s*$", re.IGNORECASE)
 
     for product_name in os.listdir(base_path):
         product_path = os.path.join(base_path, product_name)
@@ -397,6 +398,7 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
                         # Extract author from index.md
                         author_name = None
                         url_link = None
+                        is_draft = False
 
                         index_md_path = os.path.join(blog_dir_path, "index.md")
 
@@ -407,6 +409,10 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
                             try:
                                 with open(index_md_path, "r", encoding="utf-8") as f:
                                     for line in f:
+                                        # Search for draft flag if we haven't found it yet
+                                        if not is_draft and draft_regex.match(line.strip()):
+                                            is_draft = True
+
                                         # Search for author if we haven't found it yet
                                         if not author_name:
                                             author_match = author_regex.search(line)
@@ -426,6 +432,11 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
                             except UnicodeDecodeError as e:
                                 print(f"❌❌ UnicodeDecodeError while reading: {index_md_path} ❌❌")
                                 print(f"   → {e}")
+
+                        # Skip draft posts entirely — draft: true means the source content
+                        # isn't final yet and it won't be reflected in translations once set.
+                        if is_draft:
+                            continue
 
                         if missing_count > 0 or excessive_files:
                             invalid_blog_dirs.append({
