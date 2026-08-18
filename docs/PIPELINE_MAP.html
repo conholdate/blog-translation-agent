@@ -1,0 +1,728 @@
+<title>Blog Translation Pipeline</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Sans+Condensed:wght@500;600;700&display=swap">
+<style>
+  :root{
+    --paper:#F5F6F8;
+    --surface:#FFFFFF;
+    --surface-2:#EEF1F5;
+    --ink:#1B2430;
+    --ink-soft:#586173;
+    --line:#D7DBE2;
+    --accent:#2C5CE0;
+    --accent-soft:#E4EAFC;
+    --sys-git:#55606E;
+    --sys-git-soft:#E7E9EC;
+    --sys-sheet:#158F63;
+    --sys-sheet-soft:#DFF3EA;
+    --sys-llm:#6E4FD9;
+    --sys-llm-soft:#EAE4FB;
+    --ok:#158F63;
+    --ok-soft:#DFF3EA;
+    --warn:#C1710A;
+    --warn-soft:#FBEBD8;
+    --font-display:'IBM Plex Sans Condensed','Arial Narrow',sans-serif;
+    --font-body:'IBM Plex Sans',system-ui,-apple-system,sans-serif;
+    --font-mono:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --paper:#12151B;
+      --surface:#181D25;
+      --surface-2:#1F2530;
+      --ink:#E7EAF0;
+      --ink-soft:#9AA4B5;
+      --line:#2B313D;
+      --accent:#7C9CFF;
+      --accent-soft:#212C4D;
+      --sys-git:#9AA4B2;
+      --sys-git-soft:#242A33;
+      --sys-sheet:#3FC994;
+      --sys-sheet-soft:#153328;
+      --sys-llm:#B49CFF;
+      --sys-llm-soft:#2A2440;
+      --ok:#3FC994;
+      --ok-soft:#153328;
+      --warn:#F0A63E;
+      --warn-soft:#3A2A12;
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#12151B;
+    --surface:#181D25;
+    --surface-2:#1F2530;
+    --ink:#E7EAF0;
+    --ink-soft:#9AA4B5;
+    --line:#2B313D;
+    --accent:#7C9CFF;
+    --accent-soft:#212C4D;
+    --sys-git:#9AA4B2;
+    --sys-git-soft:#242A33;
+    --sys-sheet:#3FC994;
+    --sys-sheet-soft:#153328;
+    --sys-llm:#B49CFF;
+    --sys-llm-soft:#2A2440;
+    --ok:#3FC994;
+    --ok-soft:#153328;
+    --warn:#F0A63E;
+    --warn-soft:#3A2A12;
+  }
+
+  *{ box-sizing:border-box; }
+  body{
+    margin:0;
+    background:var(--paper);
+    color:var(--ink);
+    font-family:var(--font-body);
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{
+    max-width:1000px;
+    margin:0 auto;
+    padding:56px 24px 96px;
+    display:flex;
+    flex-direction:column;
+    gap:52px;
+  }
+
+  /* ---------- header ---------- */
+  header{
+    display:flex;
+    flex-direction:column;
+    gap:22px;
+    padding-bottom:28px;
+    border-bottom:1px solid var(--line);
+  }
+  .eyebrow{
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.14em;
+    text-transform:uppercase;
+    color:var(--accent);
+  }
+  h1{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:clamp(32px,5vw,46px);
+    line-height:1.05;
+    margin:0;
+    text-wrap:balance;
+    letter-spacing:-0.01em;
+  }
+  .dek{
+    font-size:16px;
+    line-height:1.6;
+    color:var(--ink-soft);
+    max-width:66ch;
+    margin:0;
+  }
+  .dek code{
+    font-family:var(--font-mono);
+    font-size:.92em;
+    background:var(--surface-2);
+    padding:.1em .35em;
+    border-radius:4px;
+  }
+  .stats{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+  }
+  .stat{
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    padding:10px 16px;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:8px;
+    min-width:104px;
+  }
+  .stat b{
+    font-family:var(--font-mono);
+    font-size:20px;
+    font-variant-numeric:tabular-nums;
+    color:var(--accent);
+  }
+  .stat span{
+    font-size:11px;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+
+  /* ---------- figures ---------- */
+  figure{
+    margin:0;
+    position:relative;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    padding:44px 28px 28px;
+  }
+  .fig-tag{
+    position:absolute;
+    top:18px;
+    left:28px;
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.12em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+  }
+  figure svg{
+    display:block;
+    width:100%;
+    height:auto;
+    color:var(--ink-soft); /* default stroke/marker color */
+  }
+  figcaption{
+    margin-top:18px;
+    padding-top:16px;
+    border-top:1px solid var(--line);
+    font-size:14.5px;
+    line-height:1.6;
+    color:var(--ink-soft);
+    max-width:70ch;
+  }
+  figcaption strong{ color:var(--ink); font-weight:600; }
+
+  .section-head{
+    display:flex;
+    align-items:baseline;
+    justify-content:space-between;
+    gap:16px;
+    flex-wrap:wrap;
+  }
+  .section-head h2{
+    font-family:var(--font-display);
+    font-weight:700;
+    font-size:22px;
+    margin:0;
+    letter-spacing:-.01em;
+  }
+  .section-head p{
+    margin:0;
+    font-size:14px;
+    color:var(--ink-soft);
+  }
+
+  /* legend */
+  .legend{
+    display:flex;
+    flex-wrap:wrap;
+    gap:14px 22px;
+    margin-top:18px;
+    padding-top:16px;
+    border-top:1px solid var(--line);
+    font-size:12.5px;
+    color:var(--ink-soft);
+  }
+  .legend .item{ display:flex; align-items:center; gap:7px; }
+  .legend .swatch{
+    width:13px; height:13px; border-radius:3px; flex:none;
+    border:1px solid var(--line);
+  }
+
+  /* svg text defaults via classes (set with attributes per-node too) */
+  text{ font-family:var(--font-body); }
+  .t-title{ font-weight:600; }
+  .t-mono{ font-family:var(--font-mono); }
+
+  /* ---------- file table ---------- */
+  .filetable{ display:flex; flex-direction:column; gap:18px; }
+  .filetable-scroll{ overflow-x:auto; }
+  table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:13.5px;
+    min-width:640px;
+  }
+  thead th{
+    text-align:left;
+    font-family:var(--font-mono);
+    font-size:11px;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+    color:var(--ink-soft);
+    font-weight:500;
+    padding:0 14px 10px;
+    border-bottom:1px solid var(--line);
+  }
+  tbody td{
+    padding:11px 14px;
+    border-bottom:1px solid var(--line);
+    vertical-align:top;
+  }
+  tbody tr:last-child td{ border-bottom:none; }
+  td.stage{
+    font-family:var(--font-display);
+    font-weight:600;
+    font-size:13px;
+    white-space:nowrap;
+    border-left:3px solid var(--stage-color,var(--accent));
+    padding-left:11px;
+  }
+  td.file{ font-family:var(--font-mono); font-size:12.5px; white-space:nowrap; color:var(--ink); }
+  td.desc{ color:var(--ink-soft); line-height:1.55; }
+
+  footer{
+    font-size:12.5px;
+    color:var(--ink-soft);
+    border-top:1px solid var(--line);
+    padding-top:20px;
+    line-height:1.7;
+  }
+  footer code{ font-family:var(--font-mono); }
+</style>
+
+<div class="page">
+
+  <header>
+    <span class="eyebrow">System map</span>
+    <h1>Blog Translation Pipeline</h1>
+    <p class="dek">
+      One agent, four sequential steps, split across two directories:
+      <code>tools/translation_agent/</code> scans blog repositories and fills in missing-language
+      posts with an LLM; <code>tools/quality_agent/</code> audits every translation already on disk
+      and force-retranslates the ones an LLM judges unusable. The two pipelines never call each
+      other directly &mdash; they hand off through Google Sheets and the shared Git repositories.
+    </p>
+    <div class="stats">
+      <div class="stat"><b>4</b><span>Pipeline steps</span></div>
+      <div class="stat"><b>3</b><span>Translation agents</span></div>
+      <div class="stat"><b>6</b><span>Blog domains</span></div>
+      <div class="stat"><b>22</b><span>Languages</span></div>
+      <div class="stat"><b>3&times;</b><span>Retries / chunk</span></div>
+    </div>
+  </header>
+
+  <!-- =========================================================== -->
+  <!-- FIGURE 1 — END TO END PIPELINE                                -->
+  <!-- =========================================================== -->
+  <section>
+    <div class="section-head">
+      <h2>1. End-to-end pipeline</h2>
+      <p>Control flow across all four steps</p>
+    </div>
+
+    <figure>
+      <span class="fig-tag">Fig. 1</span>
+      <svg viewBox="0 0 1100 1000" role="img" aria-label="Flow diagram of the four-step translation pipeline: Step 1 scans blog repositories and writes a scan sheet, Step 2 translates missing posts via an LLM and commits them back to the repo, Step 3 heuristically then AI-validates every translation into a quality sheet, and Step 4 retranslates anything the AI marks RETRANSLATE, looping back to Step 3 for re-validation.">
+        <defs>
+          <marker id="arrN" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-soft)"/>
+          </marker>
+          <marker id="arrA" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/>
+          </marker>
+          <marker id="arrW" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--warn)"/>
+          </marker>
+          <marker id="arrO" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--ok)"/>
+          </marker>
+        </defs>
+
+        <!-- ===== connective lines (drawn first, under boxes) ===== -->
+        <g fill="none" style="stroke:var(--ink-soft)" stroke-width="1.6">
+          <line x1="520" y1="80"  x2="520" y2="128" marker-end="url(#arrN)"/>
+          <line x1="670" y1="160" x2="788" y2="160" marker-end="url(#arrN)"/>
+          <polyline points="895,190 895,222 600,222 600,238" marker-end="url(#arrN)"/>
+          <line x1="370" y1="278" x2="252" y2="278" marker-end="url(#arrN)"/>
+          <line x1="670" y1="514" x2="252" y2="514" marker-end="url(#arrN)"/>
+          <polyline points="370,833 150,833 150,582" marker-end="url(#arrN)"/>
+          <line x1="670" y1="396" x2="788" y2="396" marker-end="url(#arrN)"/>
+          <line x1="670" y1="514" x2="788" y2="514" marker-end="url(#arrN)"/>
+          <line x1="670" y1="833" x2="788" y2="833" marker-end="url(#arrN)"/>
+          <line x1="520" y1="552" x2="520" y2="578" marker-end="url(#arrN)"/>
+        </g>
+
+        <!-- dashed: repo -> quality scan (independent / scheduled run) -->
+        <line x1="520" y1="316" x2="520" y2="364" style="stroke:var(--ink-soft)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrN)"/>
+        <line x1="520" y1="426" x2="520" y2="474" style="stroke:var(--ink-soft)" stroke-width="1.6" marker-end="url(#arrN)"/>
+
+        <!-- feedback: commit & push back to GitHub -->
+        <polyline points="370,278 30,278 30,50 368,50" fill="none" style="stroke:var(--accent)" stroke-width="1.6" stroke-dasharray="1 0" marker-end="url(#arrA)"/>
+
+        <!-- decision branches -->
+        <line x1="520" y1="720" x2="520" y2="798" style="stroke:var(--warn)" stroke-width="1.8" marker-end="url(#arrW)"/>
+        <polyline points="370,650 190,650 190,798" fill="none" style="stroke:var(--ok)" stroke-width="1.8" marker-end="url(#arrO)"/>
+
+        <!-- loop: fixed file re-validated by Step 3B next run -->
+        <path d="M 520,800 C 300,760 300,540 368,514" fill="none" style="stroke:var(--accent)" stroke-width="1.6" stroke-dasharray="5 4" marker-end="url(#arrA)"/>
+
+        <!-- ===== arrow labels (with backing rect for legibility) ===== -->
+        <g class="t-mono" font-size="11">
+          <g><rect x="527" y="94" width="150" height="16" style="fill:var(--surface)"/><text x="530" y="106" style="fill:var(--ink-soft)">clone / pull (PAT)</text></g>
+          <g><rect x="678" y="150" width="86" height="16" style="fill:var(--surface)"/><text x="682" y="162" style="fill:var(--ink-soft)">write rows</text></g>
+          <g><rect x="605" y="204" width="146" height="16" style="fill:var(--surface)"/><text x="608" y="216" style="fill:var(--ink-soft)">read pending rows</text></g>
+          <g><rect x="255" y="270" width="112" height="16" style="fill:var(--surface)"/><text x="258" y="282" style="fill:var(--ink-soft)">translate calls</text></g>
+          <g><rect x="255" y="506" width="98" height="16" style="fill:var(--surface)"/><text x="258" y="518" style="fill:var(--ink-soft)">validate calls</text></g>
+          <g><rect x="527" y="340" width="176" height="16" style="fill:var(--surface)"/><text x="530" y="352" style="fill:var(--ink-soft)">reads repo (scheduled)</text></g>
+          <g><rect x="527" y="446" width="190" height="16" style="fill:var(--surface)"/><text x="530" y="458" style="fill:var(--ink-soft)">flagged rows (Err % &gt; 0)</text></g>
+          <g><rect x="694" y="388" width="152" height="16" style="fill:var(--surface)"/><text x="698" y="400" style="fill:var(--ink-soft)">Error % heuristic</text></g>
+          <g><rect x="694" y="506" width="170" height="16" style="fill:var(--surface)"/><text x="698" y="518" style="fill:var(--ink-soft)">Error % AI + decision</text></g>
+          <g><rect x="694" y="825" width="128" height="16" style="fill:var(--surface)"/><text x="698" y="837" style="fill:var(--ink-soft)">Status = Fixed</text></g>
+          <g><rect x="40" y="160" width="150" height="16" style="fill:var(--surface)"/><text x="42" y="172" style="fill:var(--accent)">git commit &amp; push</text></g>
+          <g><rect x="527" y="752" width="112" height="16" style="fill:var(--surface)"/><text x="530" y="764" style="fill:var(--warn)">RETRANSLATE</text></g>
+          <g><rect x="200" y="710" width="94" height="16" style="fill:var(--surface)"/><text x="203" y="722" style="fill:var(--ok)">KEEP / NA</text></g>
+          <g><rect x="310" y="620" width="196" height="16" style="fill:var(--surface)"/><text x="313" y="632" style="fill:var(--accent)">next run &rarr; Err % after fix</text></g>
+        </g>
+
+        <!-- ===== nodes ===== -->
+        <!-- GitHub -->
+        <g>
+          <rect x="370" y="20" width="300" height="60" rx="8" style="fill:var(--sys-git-soft);stroke:var(--sys-git)" stroke-width="1.4"/>
+          <text x="520" y="46" text-anchor="middle" class="t-title" font-size="14" style="fill:var(--ink)">GitHub</text>
+          <text x="520" y="65" text-anchor="middle" class="t-mono" font-size="11" style="fill:var(--ink-soft)">6 blog repos</text>
+        </g>
+
+        <!-- Step 1 -->
+        <g>
+          <rect x="370" y="130" width="300" height="60" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)" stroke-width="1.4"/>
+          <text x="520" y="156" text-anchor="middle" class="t-title" font-size="14" style="fill:var(--ink)">Step 1 &mdash; Scan</text>
+          <text x="520" y="175" text-anchor="middle" class="t-mono" font-size="11" style="fill:var(--ink-soft)">scan_missing_translations.py</text>
+        </g>
+
+        <!-- Scan sheet -->
+        <g>
+          <rect x="790" y="130" width="210" height="60" rx="8" style="fill:var(--sys-sheet-soft);stroke:var(--sys-sheet)" stroke-width="1.4"/>
+          <text x="895" y="156" text-anchor="middle" class="t-title" font-size="13.5" style="fill:var(--ink)">Scan Sheet</text>
+          <text x="895" y="175" text-anchor="middle" font-size="11" style="fill:var(--ink-soft)">Google Sheets</text>
+        </g>
+
+        <!-- Step 2 -->
+        <g>
+          <rect x="370" y="240" width="300" height="76" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)" stroke-width="1.4"/>
+          <text x="520" y="269" text-anchor="middle" class="t-title" font-size="14" style="fill:var(--ink)">Step 2 &mdash; Translate</text>
+          <text x="520" y="288" text-anchor="middle" class="t-mono" font-size="11" style="fill:var(--ink-soft)">translator.py</text>
+          <text x="520" y="304" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">see Fig. 2 for agent detail</text>
+        </g>
+
+        <!-- LLM box -->
+        <g>
+          <rect x="40" y="250" width="210" height="332" rx="8" style="fill:var(--sys-llm-soft);stroke:var(--sys-llm)" stroke-width="1.4"/>
+          <text x="145" y="410" text-anchor="middle" class="t-title" font-size="14" style="fill:var(--ink)">LLM API</text>
+          <text x="145" y="429" text-anchor="middle" font-size="11" style="fill:var(--ink-soft)">Professionalize</text>
+        </g>
+
+        <!-- Step 3A -->
+        <g>
+          <rect x="370" y="366" width="300" height="60" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)" stroke-width="1.4"/>
+          <text x="520" y="392" text-anchor="middle" class="t-title" font-size="14" style="fill:var(--ink)">Step 3A &mdash; Heuristic Scan</text>
+          <text x="520" y="411" text-anchor="middle" class="t-mono" font-size="11" style="fill:var(--ink-soft)">quality_scanner.py</text>
+        </g>
+
+        <!-- Step 3B -->
+        <g>
+          <rect x="370" y="476" width="300" height="76" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)" stroke-width="1.4"/>
+          <text x="520" y="505" text-anchor="middle" class="t-title" font-size="14" style="fill:var(--ink)">Step 3B &mdash; AI Validate</text>
+          <text x="520" y="524" text-anchor="middle" class="t-mono" font-size="11" style="fill:var(--ink-soft)">quality_validator.py</text>
+          <text x="520" y="540" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">samples 20 paragraphs</text>
+        </g>
+
+        <!-- Quality sheet -->
+        <g>
+          <rect x="790" y="366" width="210" height="470" rx="8" style="fill:var(--sys-sheet-soft);stroke:var(--sys-sheet)" stroke-width="1.4"/>
+          <text x="895" y="595" text-anchor="middle" class="t-title" font-size="13.5" style="fill:var(--ink)">Quality Sheet</text>
+          <text x="895" y="614" text-anchor="middle" font-size="11" style="fill:var(--ink-soft)">Google Sheets</text>
+        </g>
+
+        <!-- Decision diamond -->
+        <g>
+          <polygon points="520,580 670,650 520,720 370,650" style="fill:var(--surface);stroke:var(--warn)" stroke-width="1.6"/>
+          <text x="520" y="655" text-anchor="middle" class="t-title" font-size="13" style="fill:var(--ink)">AI Decision?</text>
+        </g>
+
+        <!-- Step 4 -->
+        <g>
+          <rect x="370" y="800" width="300" height="66" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)" stroke-width="1.4"/>
+          <text x="520" y="828" text-anchor="middle" class="t-title" font-size="14" style="fill:var(--ink)">Step 4 &mdash; Retranslate</text>
+          <text x="520" y="847" text-anchor="middle" class="t-mono" font-size="11" style="fill:var(--ink-soft)">quality_retranslator.py</text>
+        </g>
+
+        <!-- End -->
+        <g>
+          <rect x="80" y="800" width="220" height="60" rx="8" style="fill:var(--ok-soft);stroke:var(--ok)" stroke-width="1.4"/>
+          <text x="190" y="826" text-anchor="middle" class="t-title" font-size="14" style="fill:var(--ink)">Kept as-is</text>
+          <text x="190" y="845" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">AI Decision = KEEP / NA</text>
+        </g>
+      </svg>
+
+      <figcaption>
+        <strong>Steps 1&ndash;2 and Steps 3&ndash;4 never call each other.</strong> They hand off
+        through Google Sheets and the shared blog repositories, so each step is safe to schedule
+        and re-run independently. Step 4 reuses <code>TranslationOrchestrator</code> from Step 2 to
+        force-overwrite a file, then Step 3B re-validates it on its next run to fill
+        <code>Error % after Fix</code>.
+      </figcaption>
+
+      <div class="legend">
+        <div class="item"><span class="swatch" style="background:var(--accent-soft);border-color:var(--accent)"></span>Pipeline step (script)</div>
+        <div class="item"><span class="swatch" style="background:var(--sys-sheet-soft);border-color:var(--sys-sheet)"></span>Google Sheet</div>
+        <div class="item"><span class="swatch" style="background:var(--sys-llm-soft);border-color:var(--sys-llm)"></span>LLM API</div>
+        <div class="item"><span class="swatch" style="background:var(--sys-git-soft);border-color:var(--sys-git)"></span>Git repository</div>
+        <div class="item"><span class="swatch" style="background:var(--surface);border-color:var(--warn)"></span>Decision point</div>
+      </div>
+    </figure>
+  </section>
+
+  <!-- =========================================================== -->
+  <!-- FIGURE 2 — STEP 2 INTERNALS                                   -->
+  <!-- =========================================================== -->
+  <section>
+    <div class="section-head">
+      <h2>2. Inside Step 2 &mdash; the orchestrator</h2>
+      <p>translator.py: TranslationOrchestrator.translate_file()</p>
+    </div>
+
+    <figure>
+      <span class="fig-tag">Fig. 2</span>
+      <svg viewBox="0 0 1080 940" role="img" aria-label="Flow diagram of the translation orchestrator: once per post it parses index.md and identifies the platform for metrics only, then for each missing language it checks whether the file already exists, parses the source, runs the Frontmatter and Content translator agents in parallel, retries each content chunk up to three times against a heuristic and AI validity check, adjusts language-prefixed URLs, and writes the output file.">
+        <defs>
+          <marker id="arrN2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-soft)"/>
+          </marker>
+          <marker id="arrA2" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--accent)"/>
+          </marker>
+        </defs>
+
+        <!-- section divider -->
+        <line x1="20" y1="130" x2="1060" y2="130" style="stroke:var(--line)" stroke-width="1.4"/>
+        <text x="540" y="122" text-anchor="middle" class="t-mono" font-size="11" letter-spacing="1.5" style="fill:var(--accent)">FOR EACH MISSING LANGUAGE &mdash; translate_file()</text>
+        <text x="60" y="30" class="t-mono" font-size="11" letter-spacing="1.5" style="fill:var(--ink-soft)">ONCE PER POST</text>
+
+        <!-- connectors -->
+        <g fill="none" style="stroke:var(--ink-soft)" stroke-width="1.6">
+          <line x1="300" y1="70" x2="348" y2="70" marker-end="url(#arrN2)"/>
+          <line x1="650" y1="70" x2="698" y2="70" marker-end="url(#arrN2)"/>
+
+          <line x1="330" y1="210" x2="378" y2="210" marker-end="url(#arrN2)"/>
+          <line x1="220" y1="260" x2="220" y2="298" marker-end="url(#arrN2)"/>
+          <line x1="220" y1="356" x2="220" y2="356" />
+          <polyline points="220,356 220,388 170,388 170,398" marker-end="url(#arrN2)"/>
+          <polyline points="220,356 220,388 550,388 550,398" marker-end="url(#arrN2)"/>
+
+          <polyline points="170,470 170,760 350,760 350,780" marker-end="url(#arrN2)"/>
+          <polyline points="660,710 660,760 470,760 470,780" marker-end="url(#arrN2)"/>
+          <line x1="410" y1="836" x2="410" y2="858" marker-end="url(#arrN2)"/>
+
+          <line x1="450" y1="565" x2="528" y2="565" marker-end="url(#arrN2)"/>
+          <line x1="660" y1="610" x2="660" y2="658" marker-end="url(#arrN2)"/>
+        </g>
+        <path d="M 570,580 C 540,600 540,545 570,558" fill="none" style="stroke:var(--accent)" stroke-width="1.5" marker-end="url(#arrA2)"/>
+
+        <!-- yes/no labels -->
+        <g class="t-mono" font-size="11">
+          <g><rect x="335" y="202" width="30" height="16" style="fill:var(--surface)"/><text x="338" y="214" style="fill:var(--ink-soft)">yes</text></g>
+          <g><rect x="205" y="290" width="30" height="16" style="fill:var(--surface)"/><text x="208" y="302" style="fill:var(--ink-soft)">no</text></g>
+          <g><rect x="480" y="547" width="70" height="16" style="fill:var(--accent)" opacity="0"/><text x="482" y="551" style="fill:var(--accent)">retry &lt;3</text></g>
+          <g><rect x="665" y="628" width="90" height="16" style="fill:var(--surface)"/><text x="668" y="640" style="fill:var(--ink-soft)">yes / VALID</text></g>
+        </g>
+
+        <!-- Row A -->
+        <g>
+          <rect x="60" y="40" width="240" height="60" rx="8" style="fill:var(--surface-2);stroke:var(--line)" stroke-width="1.4"/>
+          <text x="180" y="66" text-anchor="middle" class="t-title" font-size="13" style="fill:var(--ink)">Parse index.md</text>
+          <text x="180" y="85" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">frontmatter + content</text>
+        </g>
+        <g>
+          <rect x="350" y="40" width="300" height="60" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)" stroke-width="1.4"/>
+          <text x="500" y="66" text-anchor="middle" class="t-title" font-size="13" style="fill:var(--ink)">PlatformIdentifierAgent</text>
+          <text x="500" y="85" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">.NET / Java / Python / &hellip;</text>
+        </g>
+        <g>
+          <rect x="700" y="40" width="280" height="60" rx="8" stroke-dasharray="4 4" style="fill:var(--surface);stroke:var(--ink-soft)" stroke-width="1.2"/>
+          <text x="840" y="66" text-anchor="middle" class="t-title" font-size="13" style="fill:var(--ink)">Metrics only</text>
+          <text x="840" y="85" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">not used in prompts</text>
+        </g>
+
+        <!-- B1 diamond -->
+        <polygon points="220,160 330,210 220,260 110,210" style="fill:var(--surface);stroke:var(--ink-soft)" stroke-width="1.4"/>
+        <text x="220" y="205" text-anchor="middle" font-size="11" style="fill:var(--ink)">index.{lang}.md</text>
+        <text x="220" y="219" text-anchor="middle" font-size="11" style="fill:var(--ink)">exists?</text>
+
+        <g>
+          <rect x="380" y="185" width="220" height="50" rx="8" style="fill:var(--surface-2);stroke:var(--line)" stroke-width="1.4"/>
+          <text x="490" y="207" text-anchor="middle" class="t-title" font-size="12.5" style="fill:var(--ink)">Skip</text>
+          <text x="490" y="223" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">no LLM call</text>
+        </g>
+
+        <!-- B2 -->
+        <g>
+          <rect x="80" y="300" width="280" height="56" rx="8" style="fill:var(--surface-2);stroke:var(--line)" stroke-width="1.4"/>
+          <text x="220" y="323" text-anchor="middle" class="t-title" font-size="13" style="fill:var(--ink)">Parse index.md</text>
+          <text x="220" y="341" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">source for this language</text>
+        </g>
+
+        <!-- B3 Frontmatter -->
+        <g>
+          <rect x="30" y="400" width="280" height="70" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)" stroke-width="1.4"/>
+          <text x="170" y="424" text-anchor="middle" class="t-title" font-size="13" style="fill:var(--ink)">FrontmatterTranslatorAgent</text>
+          <text x="170" y="442" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">title &middot; description &middot; tags</text>
+          <text x="170" y="457" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">protects product names, url += /lang/</text>
+        </g>
+
+        <!-- B4 Content -->
+        <g>
+          <rect x="380" y="400" width="340" height="70" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)" stroke-width="1.4"/>
+          <text x="550" y="424" text-anchor="middle" class="t-title" font-size="13" style="fill:var(--ink)">ContentTranslatorAgent</text>
+          <text x="550" y="442" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">markdown body, chunk by chunk</text>
+          <text x="550" y="457" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">preserves code fences &amp; shortcodes</text>
+        </g>
+
+        <!-- retry inset -->
+        <g>
+          <rect x="340" y="500" width="420" height="220" rx="8" stroke-dasharray="4 4" style="fill:var(--surface);stroke:var(--ink-soft)" stroke-width="1.2"/>
+          <text x="360" y="522" class="t-title" font-size="11.5" style="fill:var(--ink)">Retry loop &mdash; up to 3 attempts / chunk</text>
+
+          <rect x="370" y="540" width="160" height="50" rx="7" style="fill:var(--surface-2);stroke:var(--line)" stroke-width="1.3"/>
+          <text x="450" y="561" text-anchor="middle" font-size="11.5" style="fill:var(--ink)">LLM: translate</text>
+          <text x="450" y="576" text-anchor="middle" font-size="11.5" style="fill:var(--ink)">chunk</text>
+
+          <polygon points="660,520 750,565 660,610 570,565" style="fill:var(--surface);stroke:var(--ink-soft)" stroke-width="1.3"/>
+          <text x="660" y="561" text-anchor="middle" font-size="10.5" style="fill:var(--ink)">heuristic +</text>
+          <text x="660" y="574" text-anchor="middle" font-size="10.5" style="fill:var(--ink)">AI check OK?</text>
+
+          <rect x="580" y="660" width="160" height="50" rx="7" style="fill:var(--ok-soft);stroke:var(--ok)" stroke-width="1.3"/>
+          <text x="660" y="681" text-anchor="middle" font-size="11.5" style="fill:var(--ink)">Accept chunk</text>
+          <text x="660" y="696" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">or keep original</text>
+        </g>
+
+        <!-- C1 -->
+        <g>
+          <rect x="260" y="780" width="300" height="56" rx="8" style="fill:var(--surface-2);stroke:var(--line)" stroke-width="1.4"/>
+          <text x="410" y="803" text-anchor="middle" class="t-title" font-size="13" style="fill:var(--ink)">Adjust domain URLs</text>
+          <text x="410" y="821" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">regex: add /{lang}/ if missed</text>
+        </g>
+
+        <!-- C2 -->
+        <g>
+          <rect x="260" y="858" width="300" height="56" rx="8" style="fill:var(--accent-soft);stroke:var(--accent)" stroke-width="1.4"/>
+          <text x="410" y="881" text-anchor="middle" class="t-title" font-size="13" style="fill:var(--ink)">Write index.{lang}.md</text>
+          <text x="410" y="899" text-anchor="middle" font-size="10.5" style="fill:var(--ink-soft)">write_markdown_file()</text>
+        </g>
+      </svg>
+
+      <figcaption>
+        <strong>The platform check runs once per post, for metrics only</strong> &mdash; it is never
+        passed into a translation prompt. Frontmatter and content translate in the same pass; only
+        the content agent retries, and a chunk containing a code fence or Hugo shortcode skips
+        translation-quality checks but is still checked for syntax corruption before being accepted.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- =========================================================== -->
+  <!-- FIGURE 3 — ROW LIFECYCLE                                      -->
+  <!-- =========================================================== -->
+  <section>
+    <div class="section-head">
+      <h2>3. Life of one translation</h2>
+      <p>State a blog post moves through, across independent runs</p>
+    </div>
+
+    <figure>
+      <span class="fig-tag">Fig. 3</span>
+      <svg viewBox="0 0 1160 360" role="img" aria-label="Timeline diagram showing a blog post's translation state moving from Missing, to Translated, to Scanned, to Validated, then branching to either Done when the AI decision is KEEP or NA, or Fixed when the AI decision is RETRANSLATE, which loops back to Validated on the next quality-validator run.">
+        <defs>
+          <marker id="arrN3" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--ink-soft)"/>
+          </marker>
+          <marker id="arrO3" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--ok)"/>
+          </marker>
+          <marker id="arrW3" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+            <path d="M0,0 L10,5 L0,10 z" style="fill:var(--warn)"/>
+          </marker>
+        </defs>
+
+        <line x1="109" y1="190" x2="341" y2="190" style="stroke:var(--ink-soft)" stroke-width="1.6" marker-end="url(#arrN3)"/>
+        <line x1="359" y1="190" x2="591" y2="190" style="stroke:var(--ink-soft)" stroke-width="1.6" marker-end="url(#arrN3)"/>
+        <line x1="609" y1="190" x2="841" y2="190" style="stroke:var(--ink-soft)" stroke-width="1.6" marker-end="url(#arrN3)"/>
+        <line x1="857" y1="184" x2="1043" y2="104" style="stroke:var(--ok)" stroke-width="1.7" marker-end="url(#arrO3)"/>
+        <line x1="857" y1="196" x2="1043" y2="276" style="stroke:var(--warn)" stroke-width="1.7" marker-end="url(#arrW3)"/>
+        <path d="M 1060,290 C 1010,340 900,320 859,196" fill="none" style="stroke:var(--accent)" stroke-width="1.5" stroke-dasharray="5 4" marker-end="url(#arrN3)"/>
+
+        <g class="t-mono" font-size="10.5" text-anchor="middle" style="fill:var(--ink-soft)">
+          <text x="225" y="205">Step 2 fills file</text>
+          <text x="475" y="205">Step 3A heuristic</text>
+          <text x="725" y="205">Step 3B AI + decision</text>
+          <text x="960" y="128" style="fill:var(--ok)">KEEP / NA</text>
+          <text x="960" y="256" style="fill:var(--warn)">RETRANSLATE</text>
+        </g>
+        <text x="955" y="340" text-anchor="middle" class="t-mono" font-size="10.5" style="fill:var(--accent)">re-validated next run &rarr; Error % after Fix</text>
+
+        <g text-anchor="middle">
+          <circle cx="100" cy="190" r="9" style="fill:var(--surface);stroke:var(--accent)" stroke-width="2"/>
+          <text x="100" y="160" class="t-title" font-size="13" style="fill:var(--ink)">Missing</text>
+          <text x="100" y="222" class="t-mono" font-size="10.5" style="fill:var(--ink-soft)">Step 1 &middot; scan sheet</text>
+
+          <circle cx="350" cy="190" r="9" style="fill:var(--surface);stroke:var(--accent)" stroke-width="2"/>
+          <text x="350" y="160" class="t-title" font-size="13" style="fill:var(--ink)">Translated</text>
+          <text x="350" y="222" class="t-mono" font-size="10.5" style="fill:var(--ink-soft)">index.{lang}.md written</text>
+
+          <circle cx="600" cy="190" r="9" style="fill:var(--surface);stroke:var(--accent)" stroke-width="2"/>
+          <text x="600" y="160" class="t-title" font-size="13" style="fill:var(--ink)">Scanned</text>
+          <text x="600" y="222" class="t-mono" font-size="10.5" style="fill:var(--ink-soft)">Error % heuristic</text>
+
+          <circle cx="850" cy="190" r="9" style="fill:var(--surface);stroke:var(--accent)" stroke-width="2"/>
+          <text x="850" y="160" class="t-title" font-size="13" style="fill:var(--ink)">Validated</text>
+          <text x="850" y="222" class="t-mono" font-size="10.5" style="fill:var(--ink-soft)">Error % AI + decision</text>
+
+          <circle cx="1060" cy="100" r="9" style="fill:var(--ok-soft);stroke:var(--ok)" stroke-width="2"/>
+          <text x="1060" y="70" class="t-title" font-size="13" style="fill:var(--ink)">Done</text>
+          <text x="1060" y="132" class="t-mono" font-size="10.5" style="fill:var(--ink-soft)">kept as-is</text>
+
+          <circle cx="1060" cy="280" r="9" style="fill:var(--warn-soft);stroke:var(--warn)" stroke-width="2"/>
+          <text x="1060" y="252" class="t-title" font-size="13" style="fill:var(--ink)">Fixed</text>
+          <text x="1060" y="312" class="t-mono" font-size="10.5" style="fill:var(--ink-soft)">Status = Fixed</text>
+        </g>
+      </svg>
+
+      <figcaption>
+        Each state is written to a Google Sheet, not held in memory &mdash; every script is safe to
+        stop and re-run, and skips rows it already analysed.
+      </figcaption>
+    </figure>
+  </section>
+
+  <!-- =========================================================== -->
+  <!-- FILE REFERENCE                                                 -->
+  <!-- =========================================================== -->
+  <section class="filetable">
+    <div class="section-head">
+      <h2>File reference</h2>
+      <p>Every script named above, grouped by stage</p>
+    </div>
+    <div class="filetable-scroll">
+      <table>
+        <thead>
+          <tr><th>Stage</th><th>File</th><th>Responsibility</th></tr>
+        </thead>
+        <tbody>
+          <tr><td class="stage" style="--stage-color:var(--accent)">Step 1</td><td class="file">scan_missing_translations.py</td><td class="desc">Walks the 6 blog repos, finds missing <code>index.{lang}.md</code> files, writes the scan &amp; history sheets.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--accent)">Step 2</td><td class="file">translator.py</td><td class="desc"><code>TranslationOrchestrator</code> plus the Frontmatter, Content, and Platform agents (Fig. 2).</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--sys-git)">Step 1&ndash;2</td><td class="file">git_repo_utils.py</td><td class="desc">Clones or pulls the six blog repositories via a GitHub PAT.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--sys-sheet)">Step 1&ndash;2</td><td class="file">io_google_spreadsheet.py</td><td class="desc">Reads and writes the scan sheet via a Google service account.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--ink-soft)">Step 1&ndash;2</td><td class="file">utils.py</td><td class="desc">Posts job metrics to two Google Apps Script webhooks.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--ink-soft)">Step 1&ndash;2</td><td class="file">config.py</td><td class="desc">Single source of truth for domains, languages, sheet IDs, and env-var secrets.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--accent)">Step 3A</td><td class="file">quality_scanner.py</td><td class="desc">Heuristic word-overlap Error % per translated file, skipping code and shortcodes.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--accent)">Step 3B</td><td class="file">quality_validator.py</td><td class="desc">AI Error % on a 20-paragraph sample; also returns the RETRANSLATE / KEEP decision and reason.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--accent)">Step 4</td><td class="file">quality_retranslator.py</td><td class="desc">Force-retranslates rows flagged RETRANSLATE via <code>TranslationOrchestrator</code>; sets Status = Fixed.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--ink-soft)">Step 3&ndash;4</td><td class="file">lang_guard.py</td><td class="desc">Language-code normalization, validation, and RTL detection shared by the quality scripts.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    Supported domains: <code>blog.aspose.com</code> &middot; <code>blog.aspose.cloud</code> &middot;
+    <code>blog.groupdocs.com</code> &middot; <code>blog.groupdocs.cloud</code> &middot;
+    <code>blog.conholdate.com</code> &middot; <code>blog.conholdate.cloud</code>.
+    Every step accepts <code>--domain</code>, most accept <code>--limit</code>; steps 2&ndash;4 share
+    one <code>.env</code> and one <code>PROFESSIONALIZE_API_KEY</code>.
+  </footer>
+
+</div>

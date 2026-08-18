@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- Posts with `draft: true` in `index.md` front matter are excluded from the missing-translations scan and skipped by the translator, since draft content isn't final and won't be re-synced into existing translations once published
+
 ---
 
 ## [2.0.0] — 2026-06-19

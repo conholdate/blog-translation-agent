@@ -40,7 +40,7 @@ One agent. Four pipeline steps. Two implementation directories.
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| Scanner | `scan_missing_translations.py` | Walks blog repos, finds missing `index.{lang}.md` files, writes report to Google Sheets |
+| Scanner | `scan_missing_translations.py` | Walks blog repos, finds missing `index.{lang}.md` files (skipping posts where `index.md` has `draft: true`), writes report to Google Sheets |
 | Orchestrator | `translator.py` — `TranslationOrchestrator` | Coordinates the translation workflow, manages agents and token tracking |
 | Frontmatter Agent | `translator.py` — `FrontmatterTranslatorAgent` | Translates YAML front matter; protects product names, updates URL with lang prefix |
 | Content Agent | `translator.py` — `ContentTranslatorAgent` | Translates Markdown body in chunks; preserves code blocks and shortcodes; 3-retry logic |

@@ -11,6 +11,7 @@ The scanner writes to two places on every run:
 **1. Per-domain tab** (`TRANSLATION_SCAN_SHEET_ID` — tab named by domain)
 - Cleared and rewritten on each scan — always shows current missing translations only
 - Columns: Scan Date, Domain, Product, Blog Post Directory, Blog Post URL, Author, Issue, Count, Target Translations, Action, Extra Files Count, Status
+- Posts whose `index.md` has `draft: true` in front matter are excluded entirely — they never appear as missing, since draft content isn't final and won't be re-synced into translations once published
 
 **2. History tab** (append-only, never cleared)
 - One row per blog post per detection event, keyed by `(domain, slug)`
@@ -67,6 +68,7 @@ start_translation(domain, author, limit)
     └── for each post row:
         │
         ├── parse_markdown_file(index.md)       # read English source
+        ├── [skip entire post if front matter has draft: true]
         ├── PlatformIdentifierAgent             # identify .NET / Java / Python / etc.
         │
         └── for each missing language:
