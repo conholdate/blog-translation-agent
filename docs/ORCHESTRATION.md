@@ -39,24 +39,33 @@ remaining = this_row_items ∩ current_scan_items_for_same_issue
 
 ---
 
-## Step 2 — Translate
+## Step 2 — Translate (and Delete)
+
+`start_translation()` reads the sheet once and runs two independent flows from the same read: `MISSING`-issue rows go to `TranslationOrchestrator.translate_files()`, `EXTRA`-issue rows go to `TranslationOrchestrator.delete_extra_files()`. Either can run with zero rows for the other.
 
 ### Entry Point
 
 ```
-translator.py  →  start_translation()  →  filter_valid_rows()  →  TranslationOrchestrator.translate_files()
+translator.py  →  start_translation()
+                     ├── filter_valid_rows()  →  TranslationOrchestrator.translate_files()
+                     └── filter_extra_rows()  →  TranslationOrchestrator.delete_extra_files()
 ```
 
 ### State Model (Step 2)
 
 | State | Description |
 |-------|-------------|
-| **Pending** | Row exists in Google Sheet with missing languages in column 7 |
-| **Filtered** | Row passes `filter_valid_rows()` — domain, product, slug, and missing langs all non-empty |
-| **In Progress** | `TranslationOrchestrator` is actively translating the post |
+| **Pending** | Row exists in Google Sheet with `Target Translations` populated (column 7) |
+| **Filtered** | Row passes `filter_valid_rows()` (Issue == MISSING) or `filter_extra_rows()` (Issue == EXTRA) |
+| **In Progress** | `TranslationOrchestrator` is actively translating or deleting for the post |
 | **Translated** | `index.{lang}.md` written to `blog-checkedout-repo/content/…` |
-| **Skipped** | `index.{lang}.md` already exists on disk — no LLM call made |
+| **Deleted** | `index.{fragment}.md` removed from `blog-checkedout-repo/content/…` (EXTRA rows) |
+| **Skipped** | `index.{lang}.md` already exists (translate) — no LLM call made; or the reconstructed `index.{fragment}.md` doesn't exist on disk (delete) — a junk file that doesn't follow the `index.*.md` naming pattern can't be losslessly reconstructed from its fragment, so it's skipped rather than guessed at |
 | **Failed** | Exception during translation — error logged, remaining langs continue |
+
+### Deletion detail (EXTRA rows)
+
+`Target Translations` on an `EXTRA` row holds comma-separated fragments (e.g. `"cs, pl, sv"` or `"tmp"`). Each reconstructs as `index.<fragment>.md` — the same convention `translate_files` uses to write output files — and is removed with `os.remove()`. The CI workflow's generic `git add content/` → commit → push (same mechanism that commits new translations) picks up the deletion automatically; no separate git logic is needed in Python.
 
 ### Control Flow (Step 2)
 

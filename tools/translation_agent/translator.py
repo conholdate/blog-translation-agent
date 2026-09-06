@@ -1043,8 +1043,80 @@ class TranslationOrchestrator:
                 raise  # Re-raise to maintain original behavior
 
         missing_translations_stats.items_failed = missing_translations_stats.items_discovered - missing_translations_stats.items_succeeded
- 
+
         return missing_translations_stats
+
+    # ============================================================================
+    # DELETE EXTRA / JUNK FILES FLAGGED BY THE SCANNER (Issue == EXTRA)
+    # ============================================================================
+    def delete_extra_files(self, currentDomain=None, extra_rows: List[List[Any]] = None) -> Stats:
+        """
+        Delete extra/junk files flagged by the scanner. Each row's Target
+        Translations column holds comma-separated fragments (e.g. "cs, pl, sv"
+        or "tmp") that reconstruct as "index.<fragment>.md" — the same
+        convention translate_files uses to write output files. A
+        reconstructed path that doesn't exist on disk is skipped rather than
+        treated as a failure, since a junk file that doesn't follow the
+        "index.*.md" pattern can't be losslessly recovered from this fragment.
+        """
+        extra_stats = Stats(0, 0, 0, 0)
+
+        for row in extra_rows:
+            domain      = row[0]
+            product     = row[1]
+            slug        = row[2]
+            post_url    = row[3]
+            post_author = row[4]
+            fragments   = [x.strip() for x in row[7].split(',') if x.strip()]
+
+            run_id = str(uuid.uuid4())
+            start_time = time.time()
+
+            blog_main_repo = self.config.domain_map.get(domain)
+            if not blog_main_repo:
+                print(f"❌ Unknown domain provided: {domain}")
+                continue
+
+            input_path = f"blog-checkedout-repo/content/{blog_main_repo}/{product}/{slug}"
+
+            deleted, skipped = [], []
+            for fragment in fragments:
+                target_path = f"{input_path}/index.{fragment}.md"
+                try:
+                    os.remove(target_path)
+                    print(f"🗑️  Deleted {target_path}")
+                    deleted.append(fragment)
+                except FileNotFoundError:
+                    print(f"⚠️  Could not find {target_path} to delete — skipping")
+                    skipped.append(fragment)
+
+            extra_stats.items_discovered += len(fragments)
+            extra_stats.items_succeeded  += len(deleted)
+            extra_stats.items_skipped    += len(skipped)
+
+            run_duration_ms = int((time.time() - start_time) * 1000)
+
+            send_metrics(
+                run_id, "success", run_duration_ms,
+                agent_name          = config.AGENT_BLOG_POST_TRANSLATOR,
+                job_type            = config.JOB_TYPE_TRANSLATION,
+                item_name           = config.JOB_ITEM_TRANSLATIONS_REMOVED,
+                items_discovered    = len(fragments),
+                items_failed        = 0,
+                items_succeeded     = len(deleted),
+                items_skipped       = len(skipped),
+                product             = config.PRODUCT_MAP[currentDomain][product] if product else config.NOT_APPLICABLE,
+                website             = domain.replace("blog.", ""),
+                post_dir            = slug,
+                post_url            = post_url,
+                post_author         = post_author,
+                discovered_items    = ", ".join(fragments),
+                succeeded_items     = ", ".join(deleted),
+                skipped_items       = ", ".join(skipped),
+            )
+
+        return extra_stats
+
     # ============================================================================
     # SINGLE FILE TRANSLATION IN ALL MISSING LANGUAGES
     # ============================================================================
@@ -1210,6 +1282,34 @@ def filter_valid_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
     ]
 
 
+def filter_extra_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
+    """
+    Return only rows that contain the required fields for deleting extra/junk
+    files flagged by the scanner:
+      col 0 — domain
+      col 1 — product
+      col 2 — slug
+      col 5 — issue (must be EXTRA — MISSING rows are for translation, not deletion)
+      col 7 — junk file fragments (comma-separated; each reconstructs as
+              "index.<fragment>.md", the same naming convention
+              translate_files uses to write output files)
+
+    Filters out sentinel rows, blank rows, MISSING-issue rows, and any row
+    with fewer than 8 columns.
+    """
+    if not posts_list:
+        return posts_list
+    return [
+        row for row in posts_list
+        if len(row) > 7
+        and str(row[0]).strip()           # domain
+        and str(row[1]).strip()           # product
+        and str(row[2]).strip()           # slug
+        and row[5] == config.ISSUE_EXTRA  # only delete-issue rows
+        and str(row[7]).strip()           # junk file fragments
+    ]
+
+
 # ============================================================================
 # MAIN FUNCTION TO START TRANSLATION BASED ON ARGS
 # ============================================================================
@@ -1260,13 +1360,19 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
                 
 
 
+        # Keep the raw sheet read around so EXTRA-issue rows aren't lost
+        # once filter_valid_rows() narrows posts_list to MISSING-only rows.
+        raw_posts_list = posts_list
+
         # Keep only rows that have the required fields: domain, product, slug, and missing langs
         if posts_list:
             posts_list = filter_valid_rows(posts_list)
 
-        if not posts_list:
+        extra_rows = filter_extra_rows(raw_posts_list) if raw_posts_list else []
+
+        if not posts_list and not extra_rows:
             print("="*60)
-            print(f"No missing translations found for domain: {currentDomain} — nothing to do.")
+            print(f"No missing translations or extra files found for domain: {currentDomain} — nothing to do.")
             print("="*60)
             return
 
@@ -1282,6 +1388,8 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
         # ======================
         if target_author is not None and posts_list is not None:
             posts_list = [row for row in posts_list if row[3].strip().lower() == target_author.strip().lower()]
+        if target_author is not None and extra_rows:
+            extra_rows = [row for row in extra_rows if row[4].strip().lower() == target_author.strip().lower()]
 
         # ======================
         # FILTER by PRODUCT
@@ -1289,30 +1397,45 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
         if target_product is not None and posts_list is not None:
             target_product = config.PRODUCT_MAP.get(target_product.strip().lower(), None)
             posts_list = [row for row in posts_list if row[1].strip().lower() == target_product.strip().lower()]
+        if target_product is not None and extra_rows:
+            extra_rows = [row for row in extra_rows if row[1].strip().lower() == target_product.strip().lower()]
 
         # ======================
         # FILTER by LIMIT
         # ======================
+        # Note: translation_limit only caps posts_list (it exists to bound
+        # LLM/API cost). Deletion is free and local, so extra_rows is not
+        # limited.
         if translation_limit is not None and posts_list is not None:
             if translation_limit < len(posts_list):
                 posts_list = posts_list[:translation_limit]
 
-        if posts_list is None:
+        orchestrator = TranslationOrchestrator(api_key=key)
+
+        if not posts_list and not extra_rows:
             print("="*60)
-            print(f"There is nothing to translate....: {posts_list}")
+            print(f"There is nothing to translate or delete....: {posts_list}")
             print("="*60)
 
         else:
-            print(f"Starting Translation for {len(posts_list)} posts.")
-            # PRINTING POSTS LIST ==========================
-            print("="*60)
-            for post in posts_list:
-                print(post[1], " > ", post[2], "\tby\t>\t", post[4])
-            print("="*60)
+            if posts_list:
+                print(f"Starting Translation for {len(posts_list)} posts.")
+                # PRINTING POSTS LIST ==========================
+                print("="*60)
+                for post in posts_list:
+                    print(post[1], " > ", post[2], "\tby\t>\t", post[4])
+                print("="*60)
 
+                metrics = orchestrator.translate_files(currentDomain, target_author, translation_limit, posts_list)
 
-            orchestrator = TranslationOrchestrator(api_key=key)
-            metrics = orchestrator.translate_files(currentDomain, target_author, translation_limit, posts_list)
+            if extra_rows:
+                print(f"Deleting extra/junk files for {len(extra_rows)} posts.")
+                print("="*60)
+                for row in extra_rows:
+                    print(row[1], " > ", row[2], "\tby\t>\t", row[4], "\textra:\t", row[7])
+                print("="*60)
+
+                orchestrator.delete_extra_files(currentDomain, extra_rows)
 
     except Exception as e:
         status = "error"
