@@ -9,28 +9,31 @@ State model, control flow, and extension points for all four pipeline steps of t
 The scanner writes to two places on every run:
 
 **1. Per-domain tab** (`TRANSLATION_SCAN_SHEET_ID` — tab named by domain)
-- Cleared and rewritten on each scan — always shows current missing translations only
-- Columns: Scan Date, Domain, Product, Blog Post Directory, Blog Post URL, Author, Issue, Count, Target Translations, Action, Extra Files Count, Status
+- Cleared and rewritten on each scan — always shows current issues only
+- Columns: Scan Date, Domain, Product, Blog Post Directory, Blog Post URL, Author, Issue, Count, Target Translations, Action, Status
+- `Issue` is `MISSING` (some language translations don't exist) or `EXTRA` (unexpected/junk files present); a post with both produces **two rows**, one per issue
+- `Target Translations` is generic: missing language codes on a `MISSING` row, junk filenames on an `EXTRA` row
+- `Action` is the corresponding remediation verb: `Translate` for `MISSING`, `Delete` for `EXTRA`
 - Posts whose `index.md` has `draft: true` in front matter are excluded entirely — they never appear as missing, since draft content isn't final and won't be re-synced into translations once published
 
 **2. History tab** (append-only, never cleared)
-- One row per blog post per detection event, keyed by `(domain, slug)`
+- One row per (blog post, issue type) per detection event, keyed by `(domain, slug, issue)` — MISSING and EXTRA lifecycles for the same post are tracked independently
 - Status lifecycle: `pending` → `partial` → `completed`
 
 ### History Tab — Completion Detection
 
-On each scan, `update_history_tab()` checks every pending history row against the current scan results:
+On each scan, `update_history_tab()` checks every pending history row against the current scan results **for the same `(domain, slug, issue)` key** — a MISSING row's langs are only ever compared against MISSING results, and an EXTRA row's filenames only against EXTRA results:
 
 ```
-remaining = this_row_langs ∩ current_missing_langs
+remaining = this_row_items ∩ current_scan_items_for_same_issue
 ```
 
 | `remaining` | Meaning | Action |
 |-------------|---------|--------|
-| empty | All langs in this row are translated | `completed` + Completed Date = scan_date |
-| `remaining < this_row_langs` | Some langs translated, some still missing | `partial` + langs updated to remaining |
-| `remaining == this_row_langs` | Nothing changed | no update |
-| post not in scan at all | Entire post fully translated | `completed` + Completed Date = scan_date |
+| empty | All items in this row are resolved (translated, or junk file deleted) | `completed` + Completed Date = scan_date |
+| `remaining < this_row_items` | Some resolved, some still flagged | `partial` + items updated to remaining |
+| `remaining == this_row_items` | Nothing changed | no update |
+| post+issue not in scan at all | Fully resolved | `completed` + Completed Date = scan_date |
 
 **Note:** Completion is detected on the **next scan after** the translation is committed — the scanner must re-run with the updated blog repo to detect completion.
 

@@ -1191,20 +1191,22 @@ def filter_valid_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
       col 0 — domain
       col 1 — product
       col 2 — slug
+      col 5 — issue (must be MISSING — EXTRA rows are for deletion, not translation)
       col 7 — missing languages
 
     Filters out sentinel rows (e.g. '!!! NO MISSING TRANSLATION FOUND !!!'),
-    blank rows, and any row with fewer than 8 columns.
+    blank rows, EXTRA-issue rows, and any row with fewer than 8 columns.
     """
     if not posts_list:
         return posts_list
     return [
         row for row in posts_list
         if len(row) > 7
-        and str(row[0]).strip()  # domain
-        and str(row[1]).strip()  # product
-        and str(row[2]).strip()  # slug
-        and str(row[7]).strip()  # missing langs
+        and str(row[0]).strip()             # domain
+        and str(row[1]).strip()             # product
+        and str(row[2]).strip()             # slug
+        and row[5] == config.ISSUE_MISSING  # only translation-issue rows
+        and str(row[7]).strip()             # missing langs
     ]
 
 

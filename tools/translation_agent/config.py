@@ -178,9 +178,16 @@ KEY_AUTHOR          = "Author"
 KEY_ISSUE           = "Issue"
 KEY_MISSING_COUNT   = "Count"
 KEY_MISSING_FILES   = "Target Translations"
-KEY_EXTRA_FILES     = "Action"
-KEY_EXTRA_COUNT     = "Extra Files Count"
+KEY_EXTRA_FILES     = "Extra Files"  # internal dict key only, not its own sheet column
+KEY_EXTRA_COUNT     = "Extra Files Count"  # internal dict key only, not its own sheet column
+KEY_ACTION          = "Action"
 KEY_STATUS          = "Status"
+
+# Issue / Action values ==========================
+ISSUE_MISSING       = "MISSING"
+ISSUE_EXTRA         = "EXTRA"
+ACTION_TRANSLATE    = "Translate"
+ACTION_DELETE       = "Delete"
 
 # ===== HEADERS for SUMMARY SHEET ===============
 KEY_DATE                = "Date"
@@ -198,8 +205,7 @@ HEADERS_MISSING_TRANSLATIONS = [
     KEY_ISSUE,
     KEY_MISSING_COUNT,
     KEY_MISSING_FILES,
-    KEY_EXTRA_FILES,
-    KEY_EXTRA_COUNT,
+    KEY_ACTION,
     KEY_STATUS
 ]
 

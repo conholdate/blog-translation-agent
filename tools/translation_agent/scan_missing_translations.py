@@ -210,23 +210,36 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             converted_result = []
             if result:
                 for item in result:
-                    converted_result.append([
+                    base_fields = [
                         domain,
                         item[config.KEY_PRODUCT_NAME],
                         item[config.KEY_DIR_BASE],
                         (f"{domain}{item[config.KEY_POST_URL]}"),
                         item[config.KEY_AUTHOR],
-                        "",  # Issue column, can be filled manually later
-                        item[config.KEY_MISSING_COUNT],
-                        ", ".join(item[config.KEY_MISSING_FILES]),  # Convert list to string
-                        ", ".join(item[config.KEY_EXTRA_FILES]),  # Convert list to string
-                        item[config.KEY_EXTRA_COUNT],
-                        "",  # Status column (F), can be filled manually later
-                    ])
+                    ]
+
+                    if item[config.KEY_MISSING_COUNT] > 0:
+                        converted_result.append(base_fields + [
+                            config.ISSUE_MISSING,
+                            item[config.KEY_MISSING_COUNT],
+                            ", ".join(item[config.KEY_MISSING_FILES]),  # Convert list to string
+                            config.ACTION_TRANSLATE,
+                            "",  # Status column, can be filled manually later
+                        ])
+
+                    if item[config.KEY_EXTRA_COUNT] > 0:
+                        converted_result.append(base_fields + [
+                            config.ISSUE_EXTRA,
+                            item[config.KEY_EXTRA_COUNT],
+                            ", ".join(item[config.KEY_EXTRA_FILES]),  # Convert list to string
+                            config.ACTION_DELETE,
+                            "",  # Status column, can be filled manually later
+                        ])
+
                     person = item[config.KEY_AUTHOR].strip().lower()
                     official_handle = config.DEV_NORMALIZED.get(person)  # safely get the handle
                     # print(f"handle: {official_handle}")
-                    
+
                     missing_translations_stats.items_discovered += item[config.KEY_MISSING_COUNT]
 
                     if official_handle:
@@ -235,10 +248,10 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                             # print(f"added: {official_handle}")
                     else:
                         print(f"\n⚠️ Handle not found for: {person}")
-                
+
                 # --- Sorting Logic ---
                 # Sorts the list 'converted_result' in-place based on the element at index 2 (column C/3)
-                converted_result.sort(key=lambda x: x[2])    
+                converted_result.sort(key=lambda x: x[2])
 
             else:
                 converted_result.append(["", "!!! NO MISSING TRANSLATION FOUND !!!"])

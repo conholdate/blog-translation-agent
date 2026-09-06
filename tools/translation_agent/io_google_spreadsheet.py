@@ -21,7 +21,7 @@ printing_allowed = False
 HISTORY_TAB             = "history"
 HISTORY_HEADERS         = [
     "Scan Date", "Domain", "Product", "Blog Post Directory",
-    "Blog Post URL", "Author", "Missing Translations", "Missing Count",
+    "Blog Post URL", "Author", "Issue", "Target Translations", "Count",
     "Status", "Completed Date",
 ]
 HISTORY_STATUS_PENDING   = "pending"
@@ -159,14 +159,20 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
     Update the history tab with the latest scan results for a domain.
 
     current_rows must match HEADERS_MISSING_TRANSLATIONS column order:
-    [domain, product, slug, url, author, issue, missing_count, missing_langs, extra, extra_count, status]
+    [domain, product, slug, url, author, issue, count, target_translations, action, status]
+
+    Tracked independently per (domain, slug, issue) — a post with both a
+    MISSING and an EXTRA issue gets two history rows, each progressing on
+    its own lifecycle. "Target Translations" holds missing-language codes
+    on a MISSING row, or junk filenames on an EXTRA row — the set-based
+    completion check below treats them as opaque tokens either way.
 
     Logic per existing history row (Status != completed):
-      - Post gone from current scan   → Status = completed, Completed Date = scan_date
-      - Post present, fewer languages → Status = partial,   update Missing Translations
-      - Post present, same languages  → no change
+      - Post/issue gone from current scan   → Status = completed, Completed Date = scan_date
+      - Post/issue present, fewer items     → Status = partial,   update Target Translations/Count
+      - Post/issue present, same items      → no change
 
-    New posts not yet in history → appended as pending.
+    New (post, issue) pairs not yet in history → appended as pending.
     """
     ws = _get_history_worksheet()
     if not ws:
@@ -177,18 +183,19 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
         data_rows = all_rows[1:] if len(all_rows) > 1 else []   # skip header
 
         # Column indices inside a history row (0-based)
-        C_SLUG    = 3
         C_DOMAIN  = 1
-        C_LANGS   = 6
-        C_COUNT   = 7
-        C_STATUS  = 8
-        C_DONE    = 9
+        C_SLUG    = 3
+        C_ISSUE   = 6
+        C_LANGS   = 7
+        C_COUNT   = 8
+        C_STATUS  = 9
+        C_DONE    = 10
 
-        # Build lookup from current scan keyed by (domain, slug)
+        # Build lookup from current scan keyed by (domain, slug, issue)
         # current_rows: [domain(0), product(1), slug(2), url(3), author(4), issue(5),
-        #                missing_count(6), missing_langs(7), extra(8), extra_count(9), status(10)]
+        #                count(6), target_translations(7), action(8), status(9)]
         current_lookup = {
-            (r[0], r[2]): r
+            (r[0], r[2], r[5]): r
             for r in current_rows
             if len(r) >= 8 and r[0] and r[2]
         }
@@ -204,35 +211,35 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
             if row[C_STATUS] == HISTORY_STATUS_COMPLETED:
                 continue
 
-            key = (row[C_DOMAIN], row[C_SLUG])
+            key = (row[C_DOMAIN], row[C_SLUG], row[C_ISSUE])
             seen_keys.add(key)
             sheet_row = i + 2   # +1 header, +1 for 1-indexed
 
             if key in current_lookup:
                 cur = current_lookup[key]
-                # Languages still missing across the whole post (from current scan)
-                cur_langs  = {l.strip() for l in str(cur[7]).split(",") if l.strip()}
-                # Languages this specific history row was tracking
-                hist_langs = {l.strip() for l in row[C_LANGS].split(",")  if l.strip()}
+                # Items still flagged for this post+issue (from current scan)
+                cur_items  = {l.strip() for l in str(cur[7]).split(",") if l.strip()}
+                # Items this specific history row was tracking
+                hist_items = {l.strip() for l in row[C_LANGS].split(",")  if l.strip()}
 
-                # Which of this row's langs are still missing?
-                remaining = hist_langs & cur_langs
+                # Which of this row's items are still flagged?
+                remaining = hist_items & cur_items
 
                 if not remaining:
-                    # All langs in this row are now translated
+                    # All items in this row are now resolved
                     row[C_STATUS] = HISTORY_STATUS_COMPLETED
                     row[C_DONE]   = scan_date
                     batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
-                elif remaining < hist_langs:
-                    # Some langs in this row are still missing
+                elif remaining < hist_items:
+                    # Some items in this row are still flagged
                     remaining_str = ", ".join(sorted(remaining))
                     row[C_LANGS]  = remaining_str
                     row[C_COUNT]  = str(len(remaining))
                     row[C_STATUS] = HISTORY_STATUS_PARTIAL
                     batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
-                # else: remaining == hist_langs → all still missing, no change
+                # else: remaining == hist_items → all still flagged, no change
             else:
-                # Post is completely gone from the missing list
+                # Post+issue is completely gone from the current scan
                 row[C_STATUS] = HISTORY_STATUS_COMPLETED
                 row[C_DONE]   = scan_date
                 batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
@@ -240,15 +247,15 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
         if batch_updates:
             ws.batch_update(batch_updates, value_input_option="USER_ENTERED")
 
-        # Append rows for posts not yet in history
+        # Append rows for (post, issue) pairs not yet in history
         new_rows = [
             [
-                scan_date, r[0], r[1], r[2], r[3], r[4],
+                scan_date, r[0], r[1], r[2], r[3], r[4], r[5],
                 r[7], str(r[6]), HISTORY_STATUS_PENDING, "",
             ]
             for r in current_rows
             if len(r) >= 8 and r[0] and r[2]
-            and (r[0], r[2]) not in seen_keys
+            and (r[0], r[2], r[5]) not in seen_keys
         ]
 
         if new_rows:

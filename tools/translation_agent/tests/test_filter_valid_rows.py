@@ -7,6 +7,7 @@ FOUND !!!') or otherwise malformed data.
 """
 
 import pytest
+import config
 from translator import filter_valid_rows
 
 
@@ -15,7 +16,8 @@ from translator import filter_valid_rows
 # ---------------------------------------------------------------------------
 
 def make_row(domain="blog.aspose.com", product="email", slug="my-post",
-             url="/email/my-post/", author="John", issue="", count="2", langs="ar, fr"):
+             url="/email/my-post/", author="John", issue=config.ISSUE_MISSING,
+             count="2", langs="ar, fr"):
     """Return a well-formed 8-column row (domain, product, slug, url, author, issue, count, langs)."""
     return [domain, product, slug, url, author, issue, count, langs]
 
@@ -82,6 +84,13 @@ def test_row_with_empty_langs_filtered():
 
 def test_row_with_whitespace_langs_filtered():
     assert filter_valid_rows([make_row(langs="   ")]) == []
+
+
+def test_extra_issue_row_is_filtered_out():
+    # EXTRA rows have a non-blank column 7 (junk filenames, not langs) —
+    # must still be excluded from translation based on Issue, not blankness.
+    row = make_row(issue=config.ISSUE_EXTRA, langs="readme.md, notes.md")
+    assert filter_valid_rows([row]) == []
 
 
 def test_row_with_too_few_columns_filtered():
