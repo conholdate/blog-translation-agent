@@ -288,17 +288,13 @@ jobs:
         id: prep
         if: success()
         env:
-          GIT_COMMITTER_NAME: "Blogs Translation Agent"
-          GIT_COMMITTER_EMAIL: "actions@github.com" 
-          GIT_AUTHOR_NAME: "Blogs Translation Agent"
-          GIT_AUTHOR_EMAIL: "blogs-translation-agent@aspose.com"
+          GIT_AUTHOR_NAME: "shoaibkhan-aspose"
+          GIT_AUTHOR_EMAIL: "shoaib.khan@aspose.com"
+          GIT_COMMITTER_NAME: "shoaibkhan-aspose"
+          GIT_COMMITTER_EMAIL: "shoaib.khan@aspose.com"
         run: |
           # Move into the checked-out directory
           cd ${{ env.REPO_PATH }}
-          
-          # Configure Git user for the commit (This is the only necessary manual config)
-          git config --global user.name "GitHub Actions Bot"
-          git config --global user.email "actions@github.com"
 
           # Sync with remote before committing — translation takes 10-30 min and the
           # remote may have moved forward. Untracked translation files survive this safely.

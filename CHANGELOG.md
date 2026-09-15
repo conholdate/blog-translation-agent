@@ -7,8 +7,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- `Issue` (`MISSING`/`EXTRA`) and `Action` (`Translate`/`Delete`) columns in the scan sheet — each flagged post now produces separate MISSING and/or EXTRA rows instead of one ambiguous combined row, so the sheet is directly actionable
+- `TranslationOrchestrator.delete_extra_files()` / `filter_extra_rows()` in `translator.py` — deletes junk/extra files flagged by `EXTRA`-issue scan rows (reconstructed as `index.<fragment>.md`), using the same `git add content/` → commit → push mechanism as translations
+- `AI Decision` + `AI Decision Reason` sheet columns — the LLM validation pass now returns an explicit RETRANSLATE/KEEP decision and reason instead of the retranslator independently re-deriving that call from a hardcoded `--threshold`
+- `tools/translation_agent/build_commit_message.py` — generates a descriptive commit title/body (translated post + per-language file list, sourced from each post's English `index.md` title) from the actual staged files, replacing the static "Daily Blogs Translation: $DOMAIN" message, across all 7 translation workflows
+- Aspose.LLM added to the product list (workflow inputs + `config.py`)
+- `docs/PIPELINE_MAP.html` — visual pipeline map
+
 ### Changed
 - Posts with `draft: true` in `index.md` front matter are excluded from the missing-translations scan and skipped by the translator, since draft content isn't final and won't be re-synced into existing translations once published
+- Missing-translations sheet headers renamed: `Missing Count` → `Count`, `Missing Translations` → `Target Translations`, `Extra Translations` → `Action`
+- History tab tracking now keyed on `(domain, slug, issue)` instead of `(domain, slug)`, so `MISSING` and `EXTRA` lifecycles for the same post progress independently
+- AI decision policy leans toward RETRANSLATE whenever there's doubt — any fully untranslated sentence or meaningful phrase triggers it regardless of the overall Error% score; `KEEP` is reserved for leftover brand/product names, abbreviations, or stray technical terms; fallback-only decision threshold lowered 70% → 30%
+- `quality_retranslator.py` row selection now filters on `AI Decision == RETRANSLATE`; removed the now-dead `--threshold` flag
+- All translate workflows now `git fetch origin && git merge --ff-only` before staging translated files, to avoid push failures from remote changes during the 10–30+ min translation window
+- Translation commits across all 7 workflows (`.github/workflows/translate-blog-*.yml`, `translate-blogs.yml`) are now authored/committed as `shoaibkhan-aspose <shoaib.khan@aspose.com>` instead of a generic bot identity; removed the dead `git config --global user.name/email` lines that were silently overridden by the `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env vars and never took effect
+
+### Fixed
+- Pre-existing bug where the LLM-exception fallback in `quality_validator.py` nested a tuple instead of unpacking it
+- Positional column reads in `translator.py` and `update_history_tab()` that shifted by one due to the inserted `Issue` column
 
 ---
 

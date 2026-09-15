@@ -9,7 +9,7 @@ This directory implements the first two steps of the **Blog Translation Agent**:
 | Step | Script | What it does |
 |------|--------|--------------|
 | **1 — Scan** | `scan_missing_translations.py` | Walks all blog repositories, detects every post missing a translated version, writes results to Google Sheets |
-| **2 — Translate** | `translator.py` | Reads the scan results and fills in missing translations using an LLM — preserving formatting, code blocks, and front matter |
+| **2 — Translate** | `translator.py` | Reads the scan results, fills in missing translations using an LLM (preserving formatting, code blocks, and front matter), and deletes extra/junk files flagged with `Action = Delete` |
 
 Steps 3 & 4 (Quality Check and Retranslate) live in `tools/quality_agent/`. See the [root README](../../README.md) for the full pipeline.
 
@@ -183,10 +183,11 @@ zh (Chinese)        | zh-hant (Chinese Traditional)
 
 ```
 tools/translation_agent/
-├── translator.py                  # TranslationOrchestrator + 3 agent classes
-├── scan_missing_translations.py   # Missing-translation scanner
+├── translator.py                  # TranslationOrchestrator + 3 agent classes + delete_extra_files()
+├── scan_missing_translations.py   # Missing/extra-translation scanner
 ├── git_repo_utils.py              # Clone / pull blog repos via GitHub PAT
 ├── io_google_spreadsheet.py       # Google Sheets read/write
+├── build_commit_message.py        # Descriptive git commit title/body from staged files
 ├── utils.py                       # Metrics webhook calls
 ├── config.py                      # All constants and env-var-backed secrets
 └── tests/
@@ -245,9 +246,10 @@ Scan results are automatically saved to Google Sheets with:
 - Product name
 - Blog post directory
 - Author
-- Missing translation count
-- Missing languages list
-- Extra/invalid files
+- Issue (`MISSING` or `EXTRA` — a post with both produces two rows)
+- Count
+- Target Translations (missing language codes for `MISSING`, junk filenames for `EXTRA`)
+- Action (`Translate` or `Delete`)
 - Direct links to details
 
 **Summary Sheet:** Aggregated daily reports across all domains

@@ -40,13 +40,14 @@ One agent. Four pipeline steps. Two implementation directories.
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| Scanner | `scan_missing_translations.py` | Walks blog repos, finds missing `index.{lang}.md` files (skipping posts where `index.md` has `draft: true`), writes report to Google Sheets |
-| Orchestrator | `translator.py` — `TranslationOrchestrator` | Coordinates the translation workflow, manages agents and token tracking |
+| Scanner | `scan_missing_translations.py` | Walks blog repos, finds missing `index.{lang}.md` files and extra/junk files (skipping posts where `index.md` has `draft: true`), classifies each into a `MISSING`/`EXTRA` `Issue` row with an `Action` (`Translate`/`Delete`), writes report to Google Sheets |
+| Orchestrator | `translator.py` — `TranslationOrchestrator` | Coordinates the translation workflow, manages agents and token tracking; also deletes junk files flagged by `EXTRA`-issue rows (`delete_extra_files()`) |
 | Frontmatter Agent | `translator.py` — `FrontmatterTranslatorAgent` | Translates YAML front matter; protects product names, updates URL with lang prefix |
 | Content Agent | `translator.py` — `ContentTranslatorAgent` | Translates Markdown body in chunks; preserves code blocks and shortcodes; 3-retry logic |
 | Platform Agent | `translator.py` — `PlatformIdentifierAgent` | Identifies the programming platform (.NET, Java, Python, …) to improve translation context |
 | Sheets I/O | `io_google_spreadsheet.py` | Reads/writes Google Sheets via service account credentials |
 | Git Utils | `git_repo_utils.py` | Clones or pulls the six blog repositories via GitHub PAT |
+| Commit Message Builder | `build_commit_message.py` | Builds a descriptive commit title/body from the actual staged files (post title + per-language list), used by all 7 translate workflows in place of a static message |
 | Metrics | `utils.py` | POSTs job metrics to two Google Apps Script webhooks (team + prod) |
 | Config | `config.py` | Single source of truth for all constants and env-var-backed secrets |
 
@@ -115,6 +116,7 @@ blog-translation-agent/
 │   │   ├── scan_missing_translations.py    # Missing-translation scanner
 │   │   ├── git_repo_utils.py               # Clone / pull blog repos
 │   │   ├── io_google_spreadsheet.py        # Google Sheets read/write
+│   │   ├── build_commit_message.py         # Descriptive git commit title/body
 │   │   ├── utils.py                        # Metrics (REST API)
 │   │   ├── config.py                       # All constants + env vars
 │   │   └── tests/
@@ -130,7 +132,8 @@ blog-translation-agent/
 │   ├── ARCHITECTURE.md                     # This file
 │   ├── ORCHESTRATION.md                    # State model + control flow
 │   ├── RUNBOOK.md                          # Operations + incident response
-│   └── DATA_HANDLING.md                    # Data flow, secrets, retention
+│   ├── DATA_HANDLING.md                    # Data flow, secrets, retention
+│   └── PIPELINE_MAP.html                   # Visual pipeline map
 │
 ├── .github/
 │   ├── workflows/                          # CI gate, operational (scan/translate), release, alerts
