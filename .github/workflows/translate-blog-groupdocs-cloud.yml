@@ -320,18 +320,14 @@ jobs:
           # Add all new or modified translation files to the staging area
           git add content/
 
-          # Check if there are any staged changes to commit
-          mapfile -t STAGED_FILES < <(git diff --cached --name-only)
-          if [ ${#STAGED_FILES[@]} -eq 0 ]; then
-            echo "No translation changes detected. Skipping COMMIT, PR or PUSH."
+          # --- Commit (one commit per translated post) ---
+          echo "Committing translated posts..."
+          "$GITHUB_WORKSPACE/.venv/bin/python" "$GITHUB_WORKSPACE/tools/translation_agent/commit_translations.py" --domain "$DOMAIN"
+
+          if [ -z "$(git log origin/$DEFAULT_BRANCH..HEAD --oneline)" ]; then
+            echo "No translation changes detected. Skipping PUSH."
             exit 0
           fi
-
-          # --- Commit ---
-          echo "Committing changes..."
-          COMMIT_MSG=$("$GITHUB_WORKSPACE/.venv/bin/python" "$GITHUB_WORKSPACE/tools/translation_agent/build_commit_message.py" --domain "$DOMAIN" "${STAGED_FILES[@]}")
-          echo "$COMMIT_MSG"
-          git commit -m "$COMMIT_MSG"
 
           # --- Push ---
           REPO_SLUG="${{ env.REPO }}" # e.g., groupdocs/groupdocs-blog
