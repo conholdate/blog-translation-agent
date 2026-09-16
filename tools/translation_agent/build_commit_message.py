@@ -15,6 +15,58 @@ import os
 import sys
 
 from translator import parse_markdown_file
+import config
+
+LANG_NAMES = {
+    "ar": "Arabic",
+    "cs": "Czech",
+    "da": "Danish",
+    "de": "German",
+    "el": "Greek",
+    "en": "English",
+    "es": "Spanish",
+    "fa": "Persian",
+    "fr": "French",
+    "he": "Hebrew",
+    "hu": "Hungarian",
+    "id": "Indonesian",
+    "it": "Italian",
+    "ja": "Japanese",
+    "ka": "Georgian",
+    "ko": "Korean",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "sv": "Swedish",
+    "th": "Thai",
+    "tr": "Turkish",
+    "uk": "Ukrainian",
+    "vi": "Vietnamese",
+    "zh": "Chinese (Simplified)",
+    "zh-hant": "Chinese (Traditional)",
+    "zh-tw": "Chinese (Traditional)",
+}
+
+
+def _lang_label(code: str) -> str:
+    return f"{LANG_NAMES.get(code, code)} ({code})"
+
+
+def _domain_lang_order(domain: str) -> list:
+    """Canonical per-domain language order from config.py, if known."""
+    data = config.domains_data.get(domain)
+    if not data:
+        return []
+    return data[config.KEY_SUPPORTED_LANGS].split("|")
+
+
+def _sort_langs(langs: list, domain: str) -> list:
+    order = _domain_lang_order(domain)
+    if not order:
+        return sorted(langs)
+    rank = {code: i for i, code in enumerate(order)}
+    return sorted(langs, key=lambda c: (rank.get(c, len(order)), c))
 
 
 def _lang_from_filename(file_path: str) -> str:
@@ -65,32 +117,28 @@ def group_by_post(file_paths: list) -> "dict[str, dict]":
 
 def build_message(domain: str, file_paths: list) -> str:
     groups = group_by_post(file_paths)
-    total_files = sum(len(g["files"]) for g in groups.values())
 
     if not groups:
         return f"Daily Blogs Translation: {domain}"
 
     if len(groups) == 1:
         ((post_dir, group),) = groups.items()
-        title_line = f'Translate blog post: "{group["title"]}" ({domain})'
-        langs = ", ".join(group["langs"])
-        body_lines = [
-            f'Added {langs} translation(s) for "{group["title"]}".',
-            "",
-            f"Files ({total_files}):",
-        ]
-        body_lines += [f"- {f}" for f in group["files"]]
+        langs = _sort_langs(group["langs"], domain)
+        title_line = f'Translate articles for: "{group["title"]}"'
+        noun = "language" if len(langs) == 1 else "languages"
+        body_lines = [f"Added translations in {len(langs)} {noun}:", ""]
+        body_lines += [f"- {_lang_label(c)}" for c in langs]
         return title_line + "\n\n" + "\n".join(body_lines)
 
-    title_line = f"Translate {len(groups)} blog posts for {domain}"
-    body_lines = [
-        f"Adding the following translations ({total_files} files across {len(groups)} posts):",
-        "",
-    ]
+    title_line = f"Translate articles for {len(groups)} posts ({domain})"
+    body_lines = [f"Added translations across {len(groups)} posts:", ""]
     for post_dir, group in groups.items():
-        langs = ", ".join(group["langs"])
-        body_lines.append(f'- "{group["title"]}" ({langs}) - {post_dir}')
-    return title_line + "\n\n" + "\n".join(body_lines)
+        langs = _sort_langs(group["langs"], domain)
+        noun = "language" if len(langs) == 1 else "languages"
+        body_lines.append(f'"{group["title"]}" — {len(langs)} {noun}:')
+        body_lines += [f"- {_lang_label(c)}" for c in langs]
+        body_lines.append("")
+    return title_line + "\n\n" + "\n".join(body_lines).rstrip()
 
 
 def main(argv: list) -> int:

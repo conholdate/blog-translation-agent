@@ -80,9 +80,33 @@ class TestBuildMessage:
         msg = build_message("blog.conholdate.com", [ja])
 
         title_line = msg.splitlines()[0]
-        assert title_line == 'Translate blog post: "My Great Post" (blog.conholdate.com)'
-        assert "Files (1):" in msg
-        assert ja in msg
+        assert title_line == 'Translate articles for: "My Great Post"'
+        assert "Added translations in 1 language:" in msg
+        assert "- Japanese (ja)" in msg
+        assert ja not in msg
+
+    def test_single_post_language_order_follows_domain_config(self, tmp_path):
+        post_dir = tmp_path / "content" / "words" / "my-post"
+        post_dir.mkdir(parents=True)
+        # blog.conholdate.com's configured order puts "ru" before "th"
+        ja = _write(post_dir / "index.th.md", "My Great Post")
+        fr = _write(post_dir / "index.ru.md", "My Great Post")
+
+        msg = build_message("blog.conholdate.com", [ja, fr])
+
+        lang_lines = [l for l in msg.splitlines() if l.startswith("- ")]
+        assert lang_lines == ["- Russian (ru)", "- Thai (th)"]
+
+    def test_unknown_domain_sorts_languages_alphabetically(self, tmp_path):
+        post_dir = tmp_path / "content" / "words" / "my-post"
+        post_dir.mkdir(parents=True)
+        ja = _write(post_dir / "index.ja.md", "My Great Post")
+        fr = _write(post_dir / "index.fr.md", "My Great Post")
+
+        msg = build_message("blog.unknown-domain.example", [ja, fr])
+
+        lang_lines = [l for l in msg.splitlines() if l.startswith("- ")]
+        assert lang_lines == ["- French (fr)", "- Japanese (ja)"]
 
     def test_multiple_posts_message(self, tmp_path):
         post_a = tmp_path / "content" / "words" / "post-a"
@@ -95,9 +119,11 @@ class TestBuildMessage:
         msg = build_message("blog.conholdate.com", [a, b])
 
         title_line = msg.splitlines()[0]
-        assert title_line == "Translate 2 blog posts for blog.conholdate.com"
-        assert '"Post A"' in msg
-        assert '"Post B"' in msg
+        assert title_line == "Translate articles for 2 posts (blog.conholdate.com)"
+        assert '"Post A" — 1 language:' in msg
+        assert '"Post B" — 1 language:' in msg
+        assert "- Japanese (ja)" in msg
+        assert "- French (fr)" in msg
 
     def test_no_markdown_files_falls_back_to_static_message(self):
         msg = build_message("blog.conholdate.com", [])
