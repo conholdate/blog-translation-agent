@@ -124,8 +124,9 @@ def build_message(domain: str, file_paths: list) -> str:
     if len(groups) == 1:
         ((post_dir, group),) = groups.items()
         langs = _sort_langs(group["langs"], domain)
-        title_line = f'Translate articles for: "{group["title"]}"'
         noun = "language" if len(langs) == 1 else "languages"
+        file_noun = "file" if len(group["files"]) == 1 else "files"
+        title_line = f'Translate articles for: "{group["title"]}" - ({len(group["files"])} {file_noun})'
         body_lines = [f"Added translations in {len(langs)} {noun}:", ""]
         body_lines += [f"- {_lang_label(c)}" for c in langs]
         return title_line + "\n\n" + "\n".join(body_lines)

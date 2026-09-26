@@ -80,7 +80,7 @@ class TestBuildMessage:
         msg = build_message("blog.conholdate.com", [ja])
 
         title_line = msg.splitlines()[0]
-        assert title_line == 'Translate articles for: "My Great Post"'
+        assert title_line == 'Translate articles for: "My Great Post" - (1 file)'
         assert "Added translations in 1 language:" in msg
         assert "- Japanese (ja)" in msg
         assert ja not in msg
