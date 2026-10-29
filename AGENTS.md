@@ -2,9 +2,13 @@
 # Blog Translation Agent — Governance Policy
 
 This file defines the operational boundaries for the Blog Translation Agent and its pipeline components.
-The agent must not read, write, or modify any path not explicitly listed below.
+The agent must not read, write, or modify any path not explicitly listed below, unless the user
+explicitly approves it in the current session (see "User-Approved Changes").
 
-Last updated: 2026-06-14
+This file is a living document: agents keep it updated with the standing instructions agreed in
+discussions with the user (see "Standing Instructions").
+
+Last updated: 2026-10-29
 Authority: Shoaib Khan
 
 ---
@@ -47,14 +51,18 @@ One agent. Four pipeline steps. Two implementation directories.
 | `blog-checkedout-repo/content/GroupDocs.Cloud/**` | Step 2 (Translate), Step 4 (Retranslate) | `index.{lang}.md` translated files |
 | `blog-checkedout-repo/content/Conholdate.Cloud/**` | Step 2 (Translate), Step 4 (Retranslate) | `index.{lang}.md` translated files |
 | Google Sheets (via API) | All steps | Metrics, scan results, quality scores |
+| Any project file | Only with the user's explicit approval in the current session | Code, docs and config changes the user requested |
 
 ---
 
-## Forbidden Paths — Never Modify
+## Forbidden Paths — Never Modify Autonomously
+
+The paths below must never be changed by pipeline runs or on an agent's own initiative.
+They **may** be changed when the user explicitly approves it in the current session.
 
 | Path | Reason |
 |------|--------|
-| `AGENTS.md` | Self-referential — policy file must not be auto-edited |
+| `AGENTS.md` | Policy file — updated only per user instructions (see "Standing Instructions") |
 | `requirements.txt` | Dependency manifest — human-controlled |
 | `requirements.lock` | Lockfile — human-controlled |
 | `tools/translation_agent/config.py` | Runtime configuration — changing this affects all workflows |
@@ -117,7 +125,7 @@ read-only operation and is encouraged before reporting a task complete.
 | `make test-quality` &nbsp;/&nbsp; `python -m pytest tools/quality_agent/tests/` | Quality Pipeline (Steps 3–4) |
 
 Notes:
-- **Running** tests is allowed; **modifying** the test files under `tools/*/tests/` is not (see Forbidden Paths).
+- **Running** tests is allowed; **modifying** the test files under `tools/*/tests/` needs user approval (see Forbidden Paths).
 - Tests are helper/edge-case level and do not require live credentials.
 - These commands are pre-approved for Claude in `.claude/settings.local.json` so agents can run them without prompting.
 
@@ -131,3 +139,28 @@ Notes:
 - Metrics failures must not halt the main pipeline
 - Per-file failures must be isolated — one failure must not stop processing of remaining files
 - `PRODUCTION_ENV` is auto-detected from the presence of `.env` at the project root (`True` in CI, `False` locally) — never set this manually from agent code
+- Markdown readers must open posts with `encoding='utf-8-sig'` — some editors save `index.md` with a UTF-8 BOM, which breaks `^---` frontmatter matching under plain `utf-8`
+
+---
+
+## User-Approved Changes
+
+- The user may approve changes to any project file, including Forbidden Paths, in the current session.
+- Approval covers the task it was given for; it does not carry over to unrelated work.
+- After a change, run the relevant tests (see Testing) and report the results.
+
+---
+
+## Standing Instructions
+
+Agreed with the user in ongoing discussions. Agents add new entries here as they are given,
+with the date, and update `Last updated` above.
+
+| Date | Instruction |
+|------|-------------|
+| 2026-10-29 | Keep this `AGENTS.md` updated with new instructions from regular discussions with the user. |
+| 2026-10-29 | Never run `git commit` (or push) without asking the user first. Suggest a title and message instead. |
+| 2026-10-29 | When a commit is allowed, author and commit as **Shoaib Khan — `shoaibkhan-aspose` <shoaib.khan@aspose.com>**. |
+| 2026-10-29 | For local testing, copy posts from a freshly fetched blog repo into `blog-checkedout-repo/content/<Domain>/<product>/`. Emptying that folder first (and removing product folders with no posts) is fine — it is an untracked mirror. Test with only a few languages to save LLM cost. |
+| 2026-10-29 | Commits to blog repos (only after approval) go to: **blog.aspose.com**, **blog.aspose.cloud**, **blog.groupdocs.cloud**, **blog.conholdate.com**, **blog.conholdate.cloud**. |
+| 2026-10-29 | **blog.groupdocs.com** is not maintained for translations: identify and report its issues, but do not translate for it or commit to its repo. |
