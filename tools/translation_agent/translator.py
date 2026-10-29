@@ -15,6 +15,7 @@ import json
 import argparse
 import config
 import time
+import traceback
 import uuid
 import random
 import os
@@ -221,9 +222,11 @@ def parse_markdown_file(file_path: str) -> Dict[str, Any]:
     Returns:
         Dictionary with 'frontmatter' and 'content' keys
     """
-    with open(file_path, 'r', encoding='utf-8') as f:
+    # utf-8-sig strips a leading BOM (some editors add one), which would
+    # otherwise stop the frontmatter regex from matching at position 0.
+    with open(file_path, 'r', encoding='utf-8-sig') as f:
         content = f.read()
-    
+
     # Split frontmatter and content
     pattern = r'^---\s*\n(.*?)\n---\s*\n(.*)$'
     match = re.match(pattern, content, re.DOTALL)
@@ -1038,9 +1041,14 @@ class TranslationOrchestrator:
                     )
             
             except Exception as e:
+                # Isolate per-post failures: log and move on to the next post
+                # instead of aborting the whole run. Skipped languages are
+                # counted in items_failed below.
                 status = "error"
-                print(f"Error during Translation: {e}")
-                raise  # Re-raise to maintain original behavior
+                print(f"❌ Error during Translation of {item[:3]}: {e}")
+                traceback.print_exc()
+                print("⏭️  Skipping to the next post...")
+                continue
 
         missing_translations_stats.items_failed = missing_translations_stats.items_discovered - missing_translations_stats.items_succeeded
 
