@@ -223,6 +223,9 @@ jobs:
       - name: Run Translator Agent
         env:
           GOOGLE_CREDENTIALS_JSON_SK: ${{ secrets.GOOGLE_CREDENTIALS_JSON_SK }}
+          # Consolidated scan sheet (history tab Comments column)
+          GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+          TRANSLATION_SCAN_SHEET_ID: ${{ secrets.TRANSLATION_SCAN_SHEET_ID }}
           TRANSLATION_SCAN_SHEET_ID_ASPOSE_COM: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_ASPOSE_COM }}
           TRANSLATION_SCAN_SHEET_ID_ASPOSE_CLOUD: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_ASPOSE_CLOUD }}
           TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_COM: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_COM }}

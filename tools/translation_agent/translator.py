@@ -325,6 +325,8 @@ def result_head(total: int = 0, succeeded: List[str] = (), skipped: List[str] = 
         return "⏭️ Skipped: draft"
     if error:
         return "❌ Failed: " + " ".join(str(error).split())[:200]
+    if skipped and not succeeded and not failed:
+        return f"⏭️ Already translated ({len(skipped)}/{total} existed)"
     if failed and done == 0:
         return f"❌ Failed 0/{total}"
     if failed:
@@ -1478,6 +1480,38 @@ def filter_extra_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
     ]
 
 
+def drop_existing_translations(posts_list: List[List[Any]],
+                               content_root: str = "blog-checkedout-repo/content"
+                               ) -> Tuple[List[List[Any]], List[List[Any]]]:
+    """
+    Check queued rows against the checked-out repo, so a stale sheet (scan not
+    re-run since the last translation) doesn't waste the run's limit:
+      - languages whose index.{lang}.md already exists are dropped from col 7
+        (col 6, the count, is updated to match);
+      - rows with no language left are returned separately as already translated.
+
+    Returns (rows_still_to_translate, rows_already_translated).
+    """
+    remaining, done = [], []
+    for row in posts_list:
+        repo = TranslationConfig.domain_map.get(str(row[0]).strip())
+        if not repo:
+            remaining.append(row)       # unknown domain: let translate_files report it
+            continue
+        folder = Path(content_root) / repo / row[1] / row[2]
+        langs = [l.strip() for l in str(row[7]).split(',') if l.strip()]
+        missing = [l for l in langs if not (folder / f"index.{l}.md").exists()]
+        if not missing:
+            done.append(row)
+            continue
+        if len(missing) < len(langs):
+            row = list(row)
+            row[6] = str(len(missing))
+            row[7] = ", ".join(missing)
+        remaining.append(row)
+    return remaining, done
+
+
 # ============================================================================
 # MAIN FUNCTION TO START TRANSLATION BASED ON ARGS
 # ============================================================================
@@ -1567,6 +1601,16 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
             extra_rows = [row for row in extra_rows if row[1].strip().lower() == target_product.strip().lower()]
 
         # ======================
+        # DROP ALREADY-TRANSLATED (stale sheet) — before the limit, so the
+        # limit counts only posts that still need work
+        # ======================
+        already_done = []
+        if posts_list:
+            posts_list, already_done = drop_existing_translations(posts_list)
+            for row in already_done:
+                detail(f"      already translated: {row[1]}/{row[2]}")
+
+        # ======================
         # FILTER by LIMIT
         # ======================
         # Note: translation_limit only caps posts_list (it exists to bound
@@ -1578,12 +1622,15 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
 
         orchestrator = TranslationOrchestrator(api_key=key)
 
+        skipped_note = (f" · skipped {len(already_done)} already translated (sheet not refreshed yet)"
+                        if already_done else "")
+
         if not posts_list and not extra_rows:
-            info("    Nothing to translate or delete after filters.")
+            info(f"    Nothing to translate or delete after filters{skipped_note}.")
 
         else:
             if posts_list:
-                info(f"    Queue: {len(posts_list)} post(s)")
+                info(f"    Queue: {len(posts_list)} post(s){skipped_note}")
                 for no, post in enumerate(posts_list, 1):
                     n_langs = len([l for l in post[7].split(',') if l.strip()])
                     info(f"      {no}. {post[1]}/{post[2]} · {post[4]} · {n_langs} langs")

@@ -4,6 +4,7 @@ import gspread
 import sys
 import gspread
 import config
+from run_log import detail
 from datetime import datetime
 from typing import List, Union # For type hints and better readability
 from gspread_formatting import cellFormat, textFormat, format_cell_range # Explicitly import necessary functions/classes
@@ -41,7 +42,7 @@ def get_gc():
         try:
             credentials_info = json.loads(json_content)
             gc = gspread.service_account_from_dict(credentials_info)
-            print("✅ GSheets client initialized.")
+            detail("✅ GSheets client initialized.")
             
             return gc
         
