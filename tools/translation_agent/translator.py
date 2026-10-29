@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from openai import OpenAI
 from dataclasses import dataclass, field
-from io_google_spreadsheet import read_from_google_spreadsheet, append_history_comment
+from io_google_spreadsheet import read_from_google_spreadsheet, read_domain_scan_rows, append_history_comment
 import json
 import argparse
 import config
@@ -1554,12 +1554,19 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
         info(f"    Filters: product={target_product or 'ALL'} · author={target_author or 'ALL'} · limit={translation_limit}")
 
         if posts_list is None:
-            detail("Posts List Found NONE - READING FROM GOOGLE SHEET")
-            
-            if config.PRODUCTION_ENV:
-                posts_list = read_from_google_spreadsheet(config.domains_data[currentDomain][config.KEY_SHEET_ID])
-            else: #Test Environment
-                posts_list = read_from_google_spreadsheet(config.SHEET_ID_TEST_QA)
+            # The consolidated scan sheet (domain tab) is the source, in DEV too —
+            # reading is harmless and all writes stay production-only.
+            posts_list, scan_date = read_domain_scan_rows(currentDomain)
+            if posts_list is not None:
+                info(f"    Source: consolidated scan sheet · '{currentDomain}' tab · scanned {scan_date[:16].replace('T', ' ') or 'unknown'} UTC")
+            else:
+                # Fallback while the old per-domain sheets are still written by the scanner
+                info("    ⚠️  Could not read the consolidated scan sheet — falling back to the old per-domain sheet")
+                if config.PRODUCTION_ENV:
+                    posts_list = read_from_google_spreadsheet(config.domains_data[currentDomain][config.KEY_SHEET_ID])
+                else: #Test Environment
+                    posts_list = read_from_google_spreadsheet(config.SHEET_ID_TEST_QA)
+                info("    Source: old per-domain sheet (first tab)")
                 
 
 

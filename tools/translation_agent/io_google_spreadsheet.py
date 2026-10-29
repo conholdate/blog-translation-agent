@@ -6,7 +6,7 @@ import gspread
 import config
 from run_log import detail
 from datetime import datetime
-from typing import List, Union # For type hints and better readability
+from typing import Dict, List, Union # For type hints and better readability
 from gspread_formatting import cellFormat, textFormat, format_cell_range # Explicitly import necessary functions/classes
 
 # --- Global Configuration (remains here as it's typically environment-specific) ---
@@ -108,13 +108,27 @@ def _auto_resize_columns(ws: gspread.Worksheet) -> None:
     }}}]})
 
 
-def write_domain_scan_results(domain: str, scan_date: str, rows: List[list], headers: List[str]) -> bool:
+DOMAIN_TAB_LEAD_HEADERS = ["Scan Date", "Missing Since", "Days Missing"]
+
+
+def _days_between(first: str, last: str) -> str:
+    """Whole days between two ISO dates/timestamps ('' if either can't be parsed)."""
+    try:
+        return str((datetime.fromisoformat(last[:10]) - datetime.fromisoformat(first[:10])).days)
+    except (ValueError, TypeError):
+        return ""
+
+
+def write_domain_scan_results(domain: str, scan_date: str, rows: List[list], headers: List[str],
+                              first_seen: Dict[tuple, str] = None) -> bool:
     """
     Overwrite the domain tab in the consolidated scan sheet with the latest scan results.
 
-    - Prepends 'Scan Date' as the first column on both the header row and every data row.
+    - Prepends 'Scan Date' (this scan), 'Missing Since' (first scan that flagged
+      the post, from the history tab) and 'Days Missing' to every row.
     - Clears all existing content before writing.
 
+    first_seen maps (slug, issue) -> first scan date; see get_history_first_seen().
     Returns True on success, False on failure.
     """
     ws = get_scan_worksheet(domain)
@@ -122,9 +136,12 @@ def write_domain_scan_results(domain: str, scan_date: str, rows: List[list], hea
         return False
 
     try:
-        # Build header and data with Scan Date prepended
-        header_row = ["Scan Date"] + headers
-        data_rows  = [[scan_date] + row for row in rows]
+        first_seen = first_seen or {}
+        header_row = DOMAIN_TAB_LEAD_HEADERS + headers
+        data_rows  = []
+        for row in rows:
+            since = first_seen.get((row[2], row[5]), scan_date) if len(row) > 5 else scan_date
+            data_rows.append([scan_date, since[:10], _days_between(since, scan_date)] + row)
 
         ws.clear()
         ws.update([header_row] + data_rows, value_input_option="USER_ENTERED")
@@ -136,6 +153,75 @@ def write_domain_scan_results(domain: str, scan_date: str, rows: List[list], hea
     except Exception as e:
         print(f"❌ Failed to write scan results for '{domain}': {e}", file=sys.stderr)
         return False
+
+
+def read_domain_scan_rows(domain: str):
+    """
+    Read the latest scan for a domain from its tab in the consolidated scan sheet.
+
+    Columns are located by header name and returned in HEADERS_MISSING_TRANSLATIONS
+    order (the layout the translator uses), so extra columns such as Scan Date /
+    Missing Since don't shift anything. Blank and placeholder rows are skipped.
+
+    Returns (rows, scan_date), or (None, "") if the tab can't be read.
+    """
+    try:
+        ws = get_scan_worksheet(domain)
+        if not ws:
+            return None, ""
+        data = ws.get_all_values()
+        if not data:
+            return [], ""
+
+        header = data[0]
+        missing = [h for h in config.HEADERS_MISSING_TRANSLATIONS if h not in header]
+        if missing:
+            print(f"❌ '{domain}' tab is missing column(s) {missing}.", file=sys.stderr)
+            return None, ""
+        idx    = [header.index(h) for h in config.HEADERS_MISSING_TRANSLATIONS]
+        c_scan = header.index("Scan Date") if "Scan Date" in header else None
+
+        # Rows are kept as they are in the tab (order included): a post may be split
+        # by hand over several rows, e.g. to translate a couple of languages first.
+        rows, scan_date = [], ""
+        for raw in data[1:]:
+            raw = raw + [""] * (len(header) - len(raw))
+            row = [raw[i] for i in idx]
+            if not str(row[0]).strip() or not str(row[2]).strip():
+                continue
+            rows.append(row)
+            if c_scan is not None and not scan_date:
+                scan_date = raw[c_scan]
+        return rows, scan_date
+
+    except Exception as e:
+        print(f"❌ Could not read '{domain}' tab from the consolidated scan sheet: {e}", file=sys.stderr)
+        return None, ""
+
+
+def get_history_first_seen(domain: str) -> Dict[tuple, str]:
+    """
+    (slug, issue) -> Scan Date of the open (not completed) history row, i.e. the
+    first scan that flagged the post. update_history_tab() never changes that date
+    while the row stays open. Returns {} if the history tab can't be read.
+    """
+    try:
+        ws = _get_history_worksheet()
+        if not ws:
+            return {}
+        data = ws.get_all_values()
+        header = data[0]
+        c_date, c_domain, c_slug, c_issue, c_status = (header.index(h) for h in
+            ("Scan Date", "Domain", "Blog Post Directory", "Issue", "Status"))
+        first_seen = {}
+        for row in data[1:]:
+            row = row + [""] * (len(header) - len(row))
+            if row[c_domain] == domain and row[c_status] != HISTORY_STATUS_COMPLETED:
+                first_seen[(row[c_slug], row[c_issue])] = row[c_date]
+        return first_seen
+    except Exception as e:
+        print(f"⚠️  Could not read history first-seen dates for '{domain}': {e}", file=sys.stderr)
+        return {}
 
 
 def _ensure_history_columns(ws: gspread.Worksheet) -> None:

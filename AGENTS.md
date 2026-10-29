@@ -88,7 +88,9 @@ Blog Translation Agent
     3. Write results to Google Sheets
 
   Step 2 — Translate
-    1. Read missing translations from Google Sheets
+    1. Read missing translations from the consolidated scan sheet (domain tab; falls back to the
+       old per-domain sheet if unreadable). Rows are used as-is and in order — a post may be split
+       by hand over several rows (e.g. to translate 2 languages first)
     2. Checkout target blog repo (read-only except content/)
     3. Translate English index.md → index.{lang}.md
     4. Write translated file to blog-checkedout-repo/content/...
