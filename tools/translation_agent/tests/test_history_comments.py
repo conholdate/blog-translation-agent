@@ -95,12 +95,19 @@ class FakeWorksheet:
         r += [""] * (col - len(r))
         r[col - 1] = value
 
+    def batch_update(self, updates, value_input_option=None):
+        from gspread.utils import a1_to_rowcol
+        for u in updates:
+            row, col = a1_to_rowcol(u["range"])
+            self.update_cell(row, col, u["values"][0][0])
+
 
 OLD_HEADER = gs.HISTORY_HEADERS[:-1]      # tab created before 'Comments' existed
 
 
-def _hist_row(slug, status="pending", comment=None):
-    row = ["2026-10-21", "blog.aspose.com", "medical", slug, "url", "A", "MISSING", "de", "1", status, ""]
+def _hist_row(slug, status="pending", comment=None, langs="de"):
+    row = ["2026-10-21", "blog.aspose.com", "medical", slug, "url", "A", "MISSING", langs,
+           str(len(langs.split(","))), status, ""]
     return row + ([comment] if comment is not None else [])
 
 
@@ -149,3 +156,69 @@ class TestAppendHistoryComment:
             raise RuntimeError("sheet down")
         monkeypatch.setattr(gs, "_get_history_worksheet", boom)
         assert gs.append_history_comment("blog.aspose.com", "my-post", "C") is False
+
+
+class TestSplitHistoryRows:
+    """A post with several open history rows, each tracking its own languages."""
+
+    @pytest.fixture
+    def ws(self, monkeypatch):
+        ws = FakeWorksheet([
+            gs.HISTORY_HEADERS,
+            _hist_row("using-converter", langs="ar, cs"),          # row 2
+            _hist_row("using-converter", langs="de"),              # row 3
+            _hist_row("using-converter", langs="es, fa"),          # row 4
+            _hist_row("using-converter", langs="fr, he, id"),      # row 5
+            _hist_row("other-post", langs="de"),                   # row 6
+        ])
+        monkeypatch.setattr(gs, "_get_history_worksheet", lambda: ws)
+        return ws
+
+    @staticmethod
+    def comment_for(row_langs):
+        return "ALL" if row_langs is None else ",".join(row_langs)
+
+    def test_each_matching_row_gets_its_own_languages(self, ws):
+        gs.append_history_comments("blog.aspose.com", "using-converter", self.comment_for,
+                                   run_langs=["de", "es", "fa"])
+        assert ws.updated_cells == [(3, 12, "de"), (4, 12, "es,fa")]
+
+    def test_partial_overlap_gets_only_shared_languages(self, ws):
+        gs.append_history_comments("blog.aspose.com", "using-converter", self.comment_for,
+                                   run_langs=["cs", "fr"])
+        assert ws.updated_cells == [(2, 12, "cs"), (5, 12, "fr")]
+
+    def test_no_overlap_falls_back_to_last_open_row(self, ws):
+        gs.append_history_comments("blog.aspose.com", "using-converter", self.comment_for,
+                                   run_langs=["ja"])
+        assert ws.updated_cells == [(5, 12, "ALL")]
+
+    def test_whole_post_comment_goes_to_every_open_row(self, ws):
+        gs.append_history_comment("blog.aspose.com", "using-converter", "❌ Failed")
+        assert [r for r, _, _ in ws.updated_cells] == [2, 3, 4, 5]
+        assert {v for _, _, v in ws.updated_cells} == {"❌ Failed"}
+
+
+class TestPerRowCommentContent:
+    """The translator's per-row comment: only the row's languages are reported."""
+
+    def test_row_subset_comment(self):
+        langs = ["de", "es", "fa"]
+        succeeded, failed = ["de", "es"], ["fa"]
+        kept = {"/total/foo/": {"de", "fa"}}
+
+        def comment_for(row_langs):
+            subset = set(row_langs) if row_langs is not None else set(langs)
+            return build_history_comment(
+                total=len(subset),
+                succeeded=[l for l in succeeded if l in subset],
+                failed=[l for l in failed if l in subset],
+                kept_english={p: ls & subset for p, ls in kept.items() if ls & subset},
+                lang_order=langs, date="D")
+
+        assert comment_for(["de"]) == (
+            "- Date: D\n- ✅ Translated 1/1\n"
+            "- EN links kept (translated URL would be 404): /total/foo/ [de]")
+        assert comment_for(["es", "fa"]) == (
+            "- Date: D\n- ⚠️ Partial 1/2\n- Failed: fa\n"
+            "- EN links kept (translated URL would be 404): /total/foo/ [fa]")

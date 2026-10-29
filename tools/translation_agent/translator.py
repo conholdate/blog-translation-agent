@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from openai import OpenAI
 from dataclasses import dataclass, field
-from io_google_spreadsheet import read_from_google_spreadsheet, read_domain_scan_rows, append_history_comment
+from io_google_spreadsheet import read_from_google_spreadsheet, read_domain_scan_rows, append_history_comments
 import json
 import argparse
 import config
@@ -984,13 +984,23 @@ class TranslationOrchestrator:
             self.link_localizers[domain] = LinkLocalizer(domain, f"blog-checkedout-repo/content/{blog_main_repo}")
         return self.link_localizers[domain]
 
-    def log_post_comment(self, domain: str, slug: str, comment: str):
-        """Print the per-post comment; in production also append it to the history tab."""
-        detail(f"\n📝 History comment for {slug}:\n{comment}\n")
+    def log_post_comment(self, domain: str, slug: str, comment, run_langs: List[str] = None):
+        """
+        Print the per-post comment; in production also append it to the history tab.
+
+        comment is either a string (whole-post comment, written to every open
+        history row of the post) or comment_for(row_langs) -> str, which builds
+        each row's comment for just the languages that row tracks (see
+        append_history_comments); run_langs are the languages this run handled.
+        """
+        comment_for = comment if callable(comment) else (lambda row_langs: comment)
+        detail(f"\n📝 History comment for {slug}:\n{comment_for(None)}\n")
         if not config.PRODUCTION_ENV:
             return "history: local run, not written"   # never write into the production history tab
         try:
-            return "history ✓" if append_history_comment(domain, slug, comment) else "history: not written"
+            written = append_history_comments(domain, slug, comment_for,
+                                              run_langs=run_langs if callable(comment) else None)
+            return "history ✓" if written else "history: not written"
         except Exception as e:
             print(f"⚠️  Could not log history comment for {slug}: {e}")
             return "history: not written"
@@ -1179,14 +1189,20 @@ class TranslationOrchestrator:
                 if kept:
                     info(f"    🔗 EN links kept: {format_kept_links(kept, langs)}")
 
-                history = self.log_post_comment(domain, slug, build_history_comment(
-                    total        = len(langs),
-                    succeeded    = success_list,
-                    skipped      = skipped_list,
-                    failed       = failed,
-                    kept_english = kept,
-                    lang_order   = langs,
-                ))
+                def comment_for(row_langs, langs=langs, failed=failed, kept=kept,
+                                success_list=success_list, skipped_list=skipped_list):
+                    """Comment for one history row, limited to the languages it tracks (None = all)."""
+                    subset = set(row_langs) if row_langs is not None else set(langs)
+                    return build_history_comment(
+                        total        = len(subset),
+                        succeeded    = [l for l in success_list if l in subset],
+                        skipped      = [l for l in skipped_list if l in subset],
+                        failed       = [l for l in failed if l in subset],
+                        kept_english = {p: ls & subset for p, ls in kept.items() if ls & subset},
+                        lang_order   = langs,
+                    )
+
+                history = self.log_post_comment(domain, slug, comment_for, run_langs=langs)
                 head = result_head(len(langs), success_list, skipped_list, failed)
                 info(f"    Result: {head} · {fmt_duration(end_time - start_time)}"
                      f" · {fmt_tokens(self.token_tracker.total_tokens)} tokens · {history}")

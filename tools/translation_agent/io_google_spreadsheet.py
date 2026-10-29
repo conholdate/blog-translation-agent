@@ -243,12 +243,25 @@ def _ensure_history_columns(ws: gspread.Worksheet) -> None:
 
 
 def append_history_comment(domain: str, slug: str, comment: str, issue: str = "MISSING") -> bool:
-    """
-    Append a comment block to the open (not completed) history row for
-    (domain, slug, issue). Earlier comments on that row are kept above it,
-    separated by a blank line.
+    """Append the same whole-post comment (e.g. an error or draft skip) to every open history row of the post."""
+    return append_history_comments(domain, slug, lambda row_langs: comment, issue=issue)
 
-    Returns True on success, False if the row or sheet can't be reached.
+
+def append_history_comments(domain: str, slug: str, comment_for, run_langs: List[str] = None,
+                            issue: str = "MISSING") -> bool:
+    """
+    Append comment blocks to the open (not completed) history rows of
+    (domain, slug, issue). A post can have several open rows, each tracking its
+    own set of languages (split by hand, or left over from partial runs).
+
+    comment_for(row_langs) builds the comment for one row:
+      - run_langs given: every open row sharing a language with run_langs gets
+        comment_for(<those shared languages, in row order>); if no row shares
+        one, the last open row gets comment_for(None) (whole-run comment).
+      - run_langs None: every open row gets comment_for(None).
+
+    Earlier comments are kept above, separated by a blank line. All cells are
+    written in one batch. Returns True if anything was written.
     Never raises — comment logging must not halt the pipeline.
     """
     try:
@@ -258,28 +271,46 @@ def append_history_comment(domain: str, slug: str, comment: str, issue: str = "M
 
         all_rows = ws.get_all_values()
         header   = all_rows[0] if all_rows else []
-        c_domain, c_slug, c_issue, c_status = (header.index(h) for h in
-            ("Domain", "Blog Post Directory", "Issue", "Status"))
+        c_domain, c_slug, c_issue, c_status, c_langs = (header.index(h) for h in
+            ("Domain", "Blog Post Directory", "Issue", "Status", "Target Translations"))
         c_comments = header.index(HISTORY_COMMENTS_HEADER)
 
-        sheet_row = None
+        open_rows = []      # (sheet_row, row_langs, existing comment)
         for i, row in enumerate(all_rows[1:], start=2):
             row = row + [""] * (len(header) - len(row))
             if (row[c_domain] == domain and row[c_slug] == slug
                     and row[c_issue] == issue and row[c_status] != HISTORY_STATUS_COMPLETED):
-                sheet_row = i     # keep the last match
-                existing  = row[c_comments]
+                langs = [l.strip() for l in row[c_langs].split(",") if l.strip()]
+                open_rows.append((i, langs, row[c_comments]))
 
-        if sheet_row is None:
+        if not open_rows:
             print(f"⚠️  No open history row for {domain}/{slug} ({issue}); comment not logged.")
             return False
 
-        text = f"{existing}\n\n{comment}" if existing else comment
-        if len(text) > HISTORY_COMMENT_MAX_LEN:
-            text = text[-HISTORY_COMMENT_MAX_LEN:]    # drop the oldest lines first
+        targets = []        # (sheet_row, existing, comment)
+        if run_langs is None:
+            targets = [(r, existing, comment_for(None)) for r, _, existing in open_rows]
+        else:
+            run = set(run_langs)
+            for r, langs, existing in open_rows:
+                shared = [l for l in langs if l in run]
+                if shared:
+                    targets.append((r, existing, comment_for(shared)))
+            if not targets:     # no row tracks these languages: keep the comment on the last open row
+                r, _, existing = open_rows[-1]
+                targets = [(r, existing, comment_for(None))]
 
-        ws.update_cell(sheet_row, c_comments + 1, text)
-        print(f"✅ History comment logged for {slug} (row {sheet_row}).")
+        updates = []
+        for r, existing, comment in targets:
+            text = f"{existing}\n\n{comment}" if existing else comment
+            if len(text) > HISTORY_COMMENT_MAX_LEN:
+                text = text[-HISTORY_COMMENT_MAX_LEN:]    # drop the oldest lines first
+            updates.append({"range": gspread.utils.rowcol_to_a1(r, c_comments + 1), "values": [[text]]})
+
+        # RAW: comments start with "- " and must never be parsed as a formula
+        ws.batch_update(updates, value_input_option="RAW")
+        print(f"✅ History comment logged for {slug} (row{'s' if len(targets) > 1 else ''} "
+              f"{', '.join(str(r) for r, _, _ in targets)}).")
         return True
 
     except Exception as e:

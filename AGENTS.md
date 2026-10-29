@@ -96,7 +96,10 @@ Blog Translation Agent
     4. Write translated file to blog-checkedout-repo/content/...
     5. Send metrics to Google Sheets
     6. Append a per-post comment (result, failed languages, EN links kept) to the
-       "Comments" column of the scan sheet's `history` tab — production only; local runs print it
+       "Comments" column of the scan sheet's `history` tab — production only; local runs print it.
+       A post can have several open history rows (one per language set): each row sharing a
+       language with the run gets a comment for just its own languages; whole-post comments
+       (error, draft) go to every open row; no shared language → last open row
 
   Step 3 — Quality Check
     Phase A — Scanner
