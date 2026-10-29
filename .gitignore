@@ -31,3 +31,6 @@ temp-artifacts/
 audit/
 identified_issues/
 reviews/
+
+# Claude Code local settings and permissions (per-machine)
+.claude/

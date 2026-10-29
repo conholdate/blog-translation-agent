@@ -127,7 +127,7 @@ read-only operation and is encouraged before reporting a task complete.
 Notes:
 - **Running** tests is allowed; **modifying** the test files under `tools/*/tests/` needs user approval (see Forbidden Paths).
 - Tests are helper/edge-case level and do not require live credentials.
-- These commands are pre-approved for Claude in `.claude/settings.local.json` so agents can run them without prompting.
+- On the maintainer's machine these commands are pre-approved for Claude in `.claude/settings.local.json`, so they run without prompting. `.claude/` is gitignored, so the pre-approval is per-machine and not shared through the repo.
 
 ---
 
@@ -161,6 +161,7 @@ with the date, and update `Last updated` above.
 | 2026-10-29 | Keep this `AGENTS.md` updated with new instructions from regular discussions with the user. |
 | 2026-10-29 | Never run `git commit` (or push) without asking the user first. Suggest a title and message instead. |
 | 2026-10-29 | When a commit is allowed, author and commit as **Shoaib Khan — `shoaibkhan-aspose` <shoaib.khan@aspose.com>**. |
+| 2026-10-29 | Do not add the agent's email to commits. The trailer is just `Co-Authored-By: Claude Opus 5.5` (model name, no `<noreply@anthropic.com>`). |
 | 2026-10-29 | For local testing, copy posts from a freshly fetched blog repo into `blog-checkedout-repo/content/<Domain>/<product>/`. Emptying that folder first (and removing product folders with no posts) is fine — it is an untracked mirror. Test with only a few languages to save LLM cost. |
 | 2026-10-29 | Commits to blog repos (only after approval) go to: **blog.aspose.com**, **blog.aspose.cloud**, **blog.groupdocs.cloud**, **blog.conholdate.com**, **blog.conholdate.cloud**. |
 | 2026-10-29 | **blog.groupdocs.com** is not maintained for translations: identify and report its issues, but do not translate for it or commit to its repo. |
