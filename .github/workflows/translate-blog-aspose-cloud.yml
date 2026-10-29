@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       domain:
-        description: "Select Domain"
+        description: "Domain*"
         required: true
         type: choice
         default: blog.aspose.cloud
@@ -21,7 +21,7 @@ on:
           - blog.conholdate.cloud
 
       product:
-        description: "Select Product (Optional)"
+        description: "Product (Optional)"
         required: false
         type: choice
         default: "ALL"
@@ -116,16 +116,17 @@ on:
           - Conholdate.Total Cloud
 
       author:
-        description: "Author Name (Optional)"
+        description: "Author (Optional)"
         required: false
         type: string
         default: "ALL"   # empty → optional
 
       limit:
-        description: "Limit Number of Posts to Translate (Optional)"
+        description: "Max Posts to Translate (Optional)"
         required: false
-        type: number
-        default: "2"   # 0 or blank means no limit
+        type: choice      # capped at 3: one post takes ~1.5h (21 langs)
+        options: ["1", "2", "3"]
+        default: "2"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

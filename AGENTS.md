@@ -166,6 +166,7 @@ with the date, and update `Last updated` above.
 | 2026-10-29 | Never run `git commit` (or push) without asking the user first. Suggest a title and message instead. |
 | 2026-10-29 | When a commit is allowed, author and commit as **Shoaib Khan — `shoaibkhan-aspose` <shoaib.khan@aspose.com>**. |
 | 2026-10-29 | Do not start working on a task until the user's message is complete (they sometimes hit Enter early). Restate the understanding and get a "go ahead" ("double-take confirmation") before starting. |
+| 2026-10-29 | A translation run must not exceed **3 posts** (2 posts take ~3 hours). Workflow input "Max Posts to Translate" is a 1/2/3 choice; keep defaults ≤ 3. |
 | 2026-10-29 | Do not add the agent's email to commits. The trailer is just `Co-Authored-By: Claude Opus 5.5` (model name, no `<noreply@anthropic.com>`). |
 | 2026-10-29 | For local testing, copy posts from a freshly fetched blog repo into `blog-checkedout-repo/content/<Domain>/<product>/`. Emptying that folder first (and removing product folders with no posts) is fine — it is an untracked mirror. Test with only a few languages to save LLM cost. |
 | 2026-10-29 | Commits to blog repos (only after approval) go to: **blog.aspose.com**, **blog.aspose.cloud**, **blog.groupdocs.cloud**, **blog.conholdate.com**, **blog.conholdate.cloud**. |
