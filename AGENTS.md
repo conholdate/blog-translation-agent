@@ -129,6 +129,7 @@ read-only operation and is encouraged before reporting a task complete.
 Notes:
 - **Running** tests is allowed; **modifying** the test files under `tools/*/tests/` needs user approval (see Forbidden Paths).
 - Tests are helper/edge-case level and do not require live credentials.
+- Translation logs are concise by default (one line per language, a result per post, a run summary — see `tools/translation_agent/run_log.py`). Use `--verbose` or `TRANSLATION_VERBOSE=1` for step-by-step detail; in GitHub Actions the detail is kept in collapsed `::group::` sections.
 - On the maintainer's machine these commands are pre-approved for Claude in `.claude/settings.local.json`, so they run without prompting. `.claude/` is gitignored, so the pre-approval is per-machine and not shared through the repo.
 
 ---

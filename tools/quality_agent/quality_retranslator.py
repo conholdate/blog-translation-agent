@@ -26,6 +26,8 @@ from datetime import datetime
 import config
 from io_google_spreadsheet import get_gc
 from translator import TranslationOrchestrator
+from run_log import group, fmt_duration
+import time
 from agents import Agent, Runner, function_tool, set_tracing_disabled, RunConfig
 from agents.models.openai_provider import OpenAIProvider
 from openai import AsyncOpenAI
@@ -141,14 +143,18 @@ def retranslate_domain(domain: str, limit: int = 0) -> str:
               f"(AI Error%: {row['error_ai']})")
 
         try:
+            started = time.time()
             # translate_file() always writes the output file — no skip-if-exists guard
-            _orchestrator.translate_file(str(index_md), lang, domain)
+            with group(f"{slug} [{lang}] · details"):
+                _orchestrator.translate_file(str(index_md), lang, domain)
 
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
             ws.update_cell(sheet_row, COL_STATUS,      STATUS_FIXED)
             ws.update_cell(sheet_row, COL_ANALYSED_AT, timestamp)
 
-            print(f"  ✅ Done — Status set to '{STATUS_FIXED}'  [{timestamp}]")
+            notes = _orchestrator.content_agent.notes_summary()
+            print(f"  ✅ Done in {fmt_duration(time.time() - started)} — Status set to '{STATUS_FIXED}'  [{timestamp}]"
+                  + (f" · {notes}" if notes else ""))
             retranslated += 1
 
         except Exception as e:

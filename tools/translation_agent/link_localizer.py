@@ -14,6 +14,8 @@ import re
 from pathlib import Path
 from typing import Dict, Optional, Set, Tuple
 
+from run_log import detail
+
 _FRONTMATTER_URL = re.compile(r'^url:\s*["\']?([^"\'\s]+)["\']?\s*$', re.MULTILINE)
 _CODE_FENCE = re.compile(r'(^```.*?^```[^\n]*$)', re.MULTILINE | re.DOTALL)
 
@@ -60,7 +62,7 @@ class LinkLocalizer:
             rf'(?P<abs>https?://{host})(?P<abspath>/[^\s)"\'<>\]]*)'
             rf'|(?P<lead>\]\(|href=["\'])(?P<relpath>/(?!/)[^\s)"\'<>\]]*)'
         )
-        print(f"   🔗 Link index for {domain}: {len(self.url_index)} posts")
+        print(f"    🔗 Link index for {domain}: {len(self.url_index)} posts")
 
     def queue(self, product: str, slug: str, lang: str):
         """Register a translation that is pending in the current run."""
@@ -82,7 +84,7 @@ class LinkLocalizer:
         if exists:
             return prefix + english.lstrip('/')
         if exists is False:
-            print(f"   🔗 Kept English link (no '{lang}' translation): {english}")
+            detail(f"   🔗 Kept English link (no '{lang}' translation): {english}")
             self.kept_english.setdefault(english, set()).add(lang)
         return english
 

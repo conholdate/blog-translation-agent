@@ -3,6 +3,7 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 import config
+from run_log import detail
 
 def send_metrics(   run_id,
                     status,
@@ -56,7 +57,7 @@ def send_metrics(   run_id,
         "token_usage"           : llm_total_tokens,
         "api_calls_count"       : llm_call_count,
     }
-    print(f"PAYLOAD:\n{payload}")
+    detail(f"PAYLOAD:\n{payload}")
     
     # Send metrics when in PRODUCTION and Agent is not the BLOG SCANNER (to avoid skewing translation metrics with scans)
     if config.PRODUCTION_ENV and agent_name != config.AGENT_BLOG_SCANNER:
@@ -70,7 +71,7 @@ def send_metrics(   run_id,
                 },
             )
             if response.status_code == 200:
-                print("✅ Metrics sent successfully")
+                detail("✅ Metrics sent successfully")
             else:
                 print(f"Failed to send metrics: {response.status_code} - {response.text}")
         except Exception as e:
@@ -78,11 +79,11 @@ def send_metrics(   run_id,
 
     try:
         payload["run_env"] = "PROD" if config.PRODUCTION_ENV else "DEV"
-        print(f"PAYLOAD:\n{payload}")
+        detail(f"PAYLOAD:\n{payload}")
 
         response = requests.post(f"{config.METRICS_WEBHOOK_URL_TEAM}?token={config.METRICS_TOKEN_TEAM}", json=payload, headers={"Content-Type": "application/json"})
         if response.status_code == 200:
-            print("✅ Metrics sent successfully")
+            detail("✅ Metrics sent successfully")
         else:
             print(f"Failed to send metrics: {response.status_code} - {response.text}")
     except Exception as e:

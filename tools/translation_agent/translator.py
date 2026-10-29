@@ -22,6 +22,8 @@ import os
 
 from utils import send_metrics
 from link_localizer import LinkLocalizer
+from collections import Counter
+from run_log import info, detail, group, set_verbose, fmt_duration, fmt_tokens
 from config import Stats
 
 
@@ -111,9 +113,9 @@ def call_openai(client: OpenAI, system_prompt: str, user_prompt: str, temperatur
         total_tokens=response.usage.total_tokens if response.usage else 0,
         model=response.model,
     )
-    print("="*40)
-    print(f"== ⚠️ ==	prompt_tokens	completion_tokens	total_tokens	model	{usage.prompt_tokens}	{usage.completion_tokens}	{usage.total_tokens}	{usage.model}")
-    print("="*40)
+    detail("="*40)
+    detail(f"== ⚠️ ==	prompt_tokens	completion_tokens	total_tokens	model	{usage.prompt_tokens}	{usage.completion_tokens}	{usage.total_tokens}	{usage.model}")
+    detail("="*40)
 
 
     text = (response.choices[0].message.content or "").strip()
@@ -303,18 +305,7 @@ def build_history_comment(total: int = 0,
         - EN links kept (translated URL would be 404): /total/foo/ [fr, ar, de +18]
     """
     date = date or time.strftime("%Y-%m-%d")
-    done = len(succeeded) + len(skipped)
-
-    if draft:
-        head = "⏭️ Skipped: draft"
-    elif error:
-        head = "❌ Failed: " + " ".join(str(error).split())[:200]
-    elif failed and done == 0:
-        head = f"❌ Failed 0/{total}"
-    elif failed:
-        head = f"⚠️ Partial {done}/{total}"
-    else:
-        head = f"✅ Translated {done}/{total}"
+    head = result_head(total, succeeded, skipped, failed, error, draft)
 
     lines = [f"- Date: {date}", f"- {head}"]
     if failed and not error:
@@ -322,13 +313,32 @@ def build_history_comment(total: int = 0,
     if skipped:
         lines.append(f"- Already existed: {', '.join(skipped)}")
     if kept_english:
-        order = {lang: i for i, lang in enumerate(lang_order)}
-        links = "; ".join(
-            f"{path} [{_short_langs(sorted(langs, key=lambda l: (order.get(l, len(order)), l)))}]"
-            for path, langs in sorted(kept_english.items())
-        )
-        lines.append(f"- EN links kept (translated URL would be 404): {links}")
+        lines.append(f"- EN links kept (translated URL would be 404): {format_kept_links(kept_english, lang_order)}")
     return "\n".join(lines)
+
+
+def result_head(total: int = 0, succeeded: List[str] = (), skipped: List[str] = (),
+                failed: List[str] = (), error: str = None, draft: bool = False) -> str:
+    """One-line post result, shared by the run log and the history comment."""
+    done = len(succeeded) + len(skipped)
+    if draft:
+        return "⏭️ Skipped: draft"
+    if error:
+        return "❌ Failed: " + " ".join(str(error).split())[:200]
+    if failed and done == 0:
+        return f"❌ Failed 0/{total}"
+    if failed:
+        return f"⚠️ Partial {done}/{total}"
+    return f"✅ Translated {done}/{total}"
+
+
+def format_kept_links(kept_english: Dict[str, set], lang_order: List[str] = ()) -> str:
+    """{'/a/': {'fr', 'de'}} -> '/a/ [de, fr]' (langs in lang_order, several links joined by '; ')"""
+    order = {lang: i for i, lang in enumerate(lang_order)}
+    return "; ".join(
+        f"{path} [{_short_langs(sorted(langs, key=lambda l: (order.get(l, len(order)), l)))}]"
+        for path, langs in sorted(kept_english.items())
+    )
 
 
 def update_url_with_language(url: str, lang_code: str) -> str:
@@ -505,8 +515,10 @@ class ContentTranslatorAgent:
         Returns:
             Translated content
         """
+        # Per-language validation notes, shown on the concise language line
+        self.notes = Counter()
         return self._translate_markdown(domain, content, target_lang)
-    
+
     def _translate_markdown(self, domain:str, content: str, target_lang: str) -> str:
         """Use OpenAI to translate markdown content with chunking for long content"""
 
@@ -515,10 +527,10 @@ class ContentTranslatorAgent:
 
         if len(paragraphs) <= 1:
             # Single paragraph or empty content - translate directly
-            return self._translate_content_chunk(content, target_lang)
+            return self._translate_content_chunk(domain, content, target_lang)
 
         # Multiple paragraphs - translate each as a separate chunk
-        print(f"📝 Content has {len(paragraphs)} paragraphs, translating chunk by chunk...")
+        detail(f"📝 Content has {len(paragraphs)} paragraphs, translating chunk by chunk...")
 
         translated_chunks = []
         i = 0
@@ -526,7 +538,7 @@ class ContentTranslatorAgent:
 
         while i < n:
             paragraph = paragraphs[i]
-            print(f"   📝 Translating paragraph {i+1}/{len(paragraphs)} : {paragraph[:20].replace(chr(10), '')}...", end=" : ", flush=True)
+            detail(f"   📝 Translating paragraph {i+1}/{len(paragraphs)} : {paragraph[:20].replace(chr(10), '')}...", end=" : ", flush=True)
 
             # An odd number of ``` fence markers means this paragraph opens a code
             # block that isn't closed within it yet (e.g. the fence is preceded by a
@@ -545,7 +557,7 @@ class ContentTranslatorAgent:
                     i += 1
 
                 paragraph = '\n\n'.join(combined)
-                print(f"Combined Paragraphs:{paragraph}")
+                detail(f"Combined Paragraphs:{paragraph}")
             else:
                 i += 1
 
@@ -554,13 +566,13 @@ class ContentTranslatorAgent:
 
         # Combine translated chunks
         final_content = '\n\n'.join(translated_chunks)
-        print(f"   ✓ Combined {len(translated_chunks)} translated paragraphs")
+        detail(f"   ✓ Combined {len(translated_chunks)} translated paragraphs")
 
         return final_content
 
     def _translate_content_chunk(self, domain:str, chunk: str, target_lang: str, max_retries: int = 3) -> str:
         """Translate a single chunk of markdown content with retry logic"""
-        print(f"   🔄 Translating chunk...")
+        detail(f"   🔄 Translating chunk...")
         # Check if this chunk should skip translation validation (code blocks, shortcodes)
         should_skip_validation = self._should_skip_translation_validation(chunk)
         # print(f"   🔍 Should skip validation: {should_skip_validation}")
@@ -616,7 +628,7 @@ class ContentTranslatorAgent:
                 {chunk}"""
             elif should_skip_validation:
                 # Previous attempt corrupted shortcode or code-fence syntax - ask the model to fix it
-                print(f"   🔄 Retrying translation (attempt {attempt + 1}/{max_retries}) to fix corrupted syntax...")
+                detail(f"   🔄 Retrying translation (attempt {attempt + 1}/{max_retries}) to fix corrupted syntax...")
                 prompt = f"""IMPORTANT: Your previous translation corrupted the markdown syntax of this content. This either:
                 (a) altered Hugo shortcode attributes, for example by wrapping a value in escaped quotes or parentheses
                     like src=(\\"...\\") instead of src="...", or
@@ -635,7 +647,7 @@ class ContentTranslatorAgent:
                 {chunk}"""
             else:
                 # Retry attempts - stronger prompt (only if not skipping validation)
-                print(f"   🔄 Translation attempt {attempt + 1}/{max_retries}...")
+                detail(f"   🔄 Translation attempt {attempt + 1}/{max_retries}...")
 
                 prompt = f"""IMPORTANT: This is RETRY ATTEMPT #{attempt + 1}. The previous translation returned untranslated content.
 
@@ -651,7 +663,7 @@ class ContentTranslatorAgent:
 
                     """
 
-                print(f"Retrying Translation for:\n{chunk}")
+                detail(f"Retrying Translation for:\n{chunk}")
 
             translated_chunk, usage = call_openai(
                 self.client,
@@ -669,23 +681,25 @@ class ContentTranslatorAgent:
                 # gets checked for syntax corruption (e.g. added escaping/parentheses, or a
                 # ``` fence the model inserted/dropped while "fixing" what looked unbalanced).
                 if self._shortcode_syntax_corrupted(chunk, translated_chunk):
-                    print(f"   ⚠️  Detected corrupted shortcode syntax on attempt {attempt + 1}")
+                    detail(f"   ⚠️  Detected corrupted shortcode syntax on attempt {attempt + 1}")
                     if attempt == max_retries - 1:
-                        print(f"   ❌ Shortcode syntax still corrupted after {max_retries} attempts, keeping original chunk")
+                        detail(f"   ❌ Shortcode syntax still corrupted after {max_retries} attempts, keeping original chunk")
+                        self._note("kept in English (shortcode syntax)")
                         return chunk
                     continue  # Retry with the syntax-fix prompt
 
                 if self._code_fence_count_mismatched(chunk, translated_chunk):
-                    print(f"   ⚠️  Detected code fence (```) count mismatch on attempt {attempt + 1}")
+                    detail(f"   ⚠️  Detected code fence (```) count mismatch on attempt {attempt + 1}")
                     if attempt == max_retries - 1:
-                        print(f"   ❌ Code fence mismatch persisted after {max_retries} attempts, keeping original chunk")
+                        detail(f"   ❌ Code fence mismatch persisted after {max_retries} attempts, keeping original chunk")
+                        self._note("kept in English (code fence)")
                         return chunk
                     continue  # Retry with the syntax-fix prompt
 
                 if attempt > 0:
-                    print(f"   ✓ Translation successful on attempt {attempt + 1} (skipped validation)")
+                    detail(f"   ✓ Translation successful on attempt {attempt + 1} (skipped validation)")
 
-                print(f"   -- Skip validation -- >>{translated_chunk[:20].replace(chr(10), '')}")
+                detail(f"   -- Skip validation -- >>{translated_chunk[:20].replace(chr(10), '')}")
 
                 return translated_chunk
 
@@ -695,23 +709,37 @@ class ContentTranslatorAgent:
             if self._appears_translated(chunk, translated_chunk):
                 # print(f"   ✅ Appears Translated")
                 if attempt > 0:
-                    print(f"   ✓ Translation successful on attempt {attempt + 1}")
+                    detail(f"   ✓ Translation successful on attempt {attempt + 1}")
                 return translated_chunk
             else:
-                print(f"   ❌ Does Not Appears Translated")
+                detail(f"   ❌ Does Not Appears Translated")
                 # Translation appears to have failed - analyze with AI
-                print(f"   ⚠️  Translation attempt {attempt + 1} appears untranslated, analyzing with AI...")
+                detail(f"   ⚠️  Translation attempt {attempt + 1} appears untranslated, analyzing with AI...")
                 if self._ai_should_retry(chunk, translated_chunk,target_lang):
-                    print(f"   🔄 AI determined content should be RE-TRIED for translation.")
+                    detail(f"   🔄 AI determined content should be RE-TRIED for translation.")
                     if attempt == max_retries - 1:
-                        print(f"   ❌ All {max_retries} attempts failed, returning original chunk")
+                        detail(f"   ❌ All {max_retries} attempts failed, returning original chunk")
+                        self._note("left untranslated")
                         return chunk  # Return original if all retries fail
                     # Continue to next attempt
                 else:
-                    print(f"   ✅ AI determined untranslated content is acceptable (code/technical)")
+                    detail(f"   ✅ AI determined untranslated content is acceptable (code/technical)")
+                    self._note("untranslated, accepted")
                     return translated_chunk  # Accept as successful
 
         return chunk  # Fallback
+
+    def _note(self, key: str):
+        if not hasattr(self, "notes"):
+            self.notes = Counter()
+        self.notes[key] += 1
+
+    def notes_summary(self) -> str:
+        """Counter({'left untranslated': 2}) -> '2 paragraphs left untranslated'"""
+        notes = getattr(self, "notes", None) or {}
+        return ", ".join(
+            f"{n} paragraph{'s' if n > 1 else ''} {key}" for key, n in notes.items()
+        )
 
     def _appears_translated(self, original: str, translated: str) -> bool:
         """Quick check if translation appears successful using heuristics"""
@@ -741,7 +769,7 @@ class ContentTranslatorAgent:
         translated_words = set(translated_clean.split())
 
         if len(original_words) <= 2:  # Very short text
-            print(f"   Short Text -- >>{translated[:20].replace(chr(10), '')}")
+            detail(f"   Short Text -- >>{translated[:20].replace(chr(10), '')}")
             return len(translated_words) > 0
 
         changed_words = len(original_words - translated_words)
@@ -751,7 +779,7 @@ class ContentTranslatorAgent:
         # print(f"   Changed words: {changed_words}")
         # print(f"   Original words: {original_words}")
         # print(f"   Translated words: {translated_words}")
-        print(f"   Changed words %: {change_percent:.0f}% -- >>{translated[:20].replace(chr(10), '')}")
+        detail(f"   Changed words %: {change_percent:.0f}% -- >>{translated[:20].replace(chr(10), '')}")
 
         return change_percent > 20  # Lower threshold for quick check
 
@@ -783,7 +811,7 @@ class ContentTranslatorAgent:
         RESPONSE FORMAT:
         Do not provide explanations. Provide only one word as the final answer: VALID or RETRY.
         """
-        print(f"   🤖 Analyzing translation validity with AI...")
+        detail(f"   🤖 Analyzing translation validity with AI...")
         # print(f"   🤖 Prompt: {analysis_prompt}")
         try:
             response, usage = call_openai(
@@ -801,7 +829,7 @@ class ContentTranslatorAgent:
             if result in ['VALID', 'RETRY']:
                 return result
             else:
-                print(f"   ⚠️  Unexpected AI analysis response: {result}, defaulting to RETRY")
+                detail(f"   ⚠️  Unexpected AI analysis response: {result}, defaulting to RETRY")
                 return 'RETRY'
 
         except Exception as e:
@@ -956,13 +984,14 @@ class TranslationOrchestrator:
 
     def log_post_comment(self, domain: str, slug: str, comment: str):
         """Print the per-post comment; in production also append it to the history tab."""
-        print(f"\n📝 History comment for {slug}:\n{comment}\n")
+        detail(f"\n📝 History comment for {slug}:\n{comment}\n")
         if not config.PRODUCTION_ENV:
-            return      # local runs never write into the production history tab
+            return "history: local run, not written"   # never write into the production history tab
         try:
-            append_history_comment(domain, slug, comment)
+            return "history ✓" if append_history_comment(domain, slug, comment) else "history: not written"
         except Exception as e:
             print(f"⚠️  Could not log history comment for {slug}: {e}")
+            return "history: not written"
 
     def queue_translations(self, posts_list: List[List[Any]]):
         """Register every queued (post, lang) so links to posts translated later in this run count as existing."""
@@ -988,11 +1017,13 @@ class TranslationOrchestrator:
         total_start_time = time.time()
         total_status = "success"
 
-        print(f"   Translating {len(posts_list_to_translate)} Items")
-
         self.queue_translations(posts_list_to_translate)
 
-        for item in posts_list_to_translate:
+        n_posts = len(posts_list_to_translate)
+        run_results = Counter()      # post result emoji -> count
+        run_tokens = 0
+
+        for post_no, item in enumerate(posts_list_to_translate, 1):
 
             # Reset token tracker for each post so metrics are per-post
             self.token_tracker.reset()
@@ -1021,11 +1052,11 @@ class TranslationOrchestrator:
                 post_url = item[3]
                 post_author = item[4]
                 missed_langs = discovery_list = [x.strip() for x in item[7].split(',')]
+                langs = [l for l in missed_langs if l]
 
-                print(f"✅ Translating: {item}")
-                print(f"\n{'='*60}")
-                print(f"{product}\t>\t{slug}\tby\t>\t{post_author}\tinto\t{item[7]}")
-                print(f"\n{'='*60}")
+                info(f"\n━━━ [{post_no}/{n_posts}] {product}/{slug}  ·  {post_author}")
+                info(f"    Target ({len(langs)}): {', '.join(langs)}")
+                detail(f"    Row: {item}")
 
                 missing_translations_stats.items_discovered += len(missed_langs)
                 items_discovered += len(missed_langs)
@@ -1038,8 +1069,8 @@ class TranslationOrchestrator:
                 input_path = f"blog-checkedout-repo/content/{blog_main_repo}/{product}/{slug}"
                 index_md_file_path = f"{input_path}/index.md"
 
-                print(f"Input Path {input_path}")
-                print(f"Input File Path {index_md_file_path}")
+                detail(f"Input Path {input_path}")
+                detail(f"Input File Path {index_md_file_path}")
 
                 # ============================================================================
                 # Identify platform
@@ -1051,13 +1082,15 @@ class TranslationOrchestrator:
                 # Draft posts aren't final yet and won't be re-synced into existing
                 # translations once published, so skip translating them altogether.
                 if frontmatter.get('draft') is True:
-                    print(f"⚠️  Skipping {slug}: source index.md is marked draft: true")
-                    self.log_post_comment(domain, slug, build_history_comment(draft=True))
+                    history = self.log_post_comment(domain, slug, build_history_comment(draft=True))
+                    info(f"    Result: {result_head(draft=True)} (source index.md is draft: true) · {history}")
+                    run_results["⏭️"] += 1
                     continue
 
                 full_content = f"---\n{yaml.dump(frontmatter, allow_unicode=True, sort_keys=False, default_flow_style=False)}---\n\n{post_content}"
-                identified_platform = self.platform_agent.identify_platform(full_content)
-                print(f"   🏷️  Identified Platform: {identified_platform}")
+                with group(f"{slug} · platform"):
+                    identified_platform = self.platform_agent.identify_platform(full_content)
+                    detail(f"   🏷️  Identified Platform: {identified_platform}")
                 # ============================================================================
 
                 for missed_lang in missed_langs:
@@ -1067,21 +1100,26 @@ class TranslationOrchestrator:
                         # if input_path/index.{missed_lang}.md exists, skip
                         output_file_path = f"{input_path}/index.{missed_lang}.md"
                         if Path(output_file_path).exists() or not missed_lang:
-                            print(f"⚠️  Skipping translation for {slug} into '{missed_lang}' as it already exists.")
+                            if missed_lang:
+                                info(f"    ⏭️ {missed_lang:<8} already exists")
                             items_skipped += 1
                             missing_translations_stats.items_skipped += 1
                             skipped_list.append(missed_lang)
                             continue
 
-                        print(f"✅ Translating: {slug} into {missed_lang}...")
-
-                        translation_file_path = self.translate_file(index_md_file_path, missed_lang, domain)
-                        # translation_file_path = None 
+                        lang_start = time.time()
+                        lang_tokens = self.token_tracker.total_tokens
+                        with group(f"{missed_lang} · details"):
+                            translation_file_path = self.translate_file(index_md_file_path, missed_lang, domain)
 
                         if translation_file_path:
                             missing_translations_stats.items_succeeded += 1
                             items_succeeded +=1
                             success_list.append(missed_lang)
+                            notes = self.content_agent.notes_summary()
+                            info(f"    ✅ {missed_lang:<8} {fmt_duration(time.time() - lang_start)}"
+                                 f" · {fmt_tokens(self.token_tracker.total_tokens - lang_tokens)} tokens"
+                                 + (f" · {notes}" if notes else ""))
 
                     except Exception as e:
                         msg = str(e)
@@ -1092,7 +1130,9 @@ class TranslationOrchestrator:
                             print("❌ Error:"+ msg)
                             sys.exit(1)
 
-                        print(f"❌ Error translating {index_md_file_path} to {missed_lang}: {e}\n")
+                        info(f"    ❌ {missed_lang:<8} {type(e).__name__}: {' '.join(msg.split())[:150]}")
+                        with group(f"{missed_lang} · traceback"):
+                            traceback.print_exc()
                         continue
                 
                 end_time = time.time()
@@ -1104,7 +1144,7 @@ class TranslationOrchestrator:
                     failure_list = [item for item in discovery_list if item not in success_list]
 
                 # Print and capture token usage summary for this post
-                print(f"\n{self.token_tracker.summary()}")
+                detail(f"\n{self.token_tracker.summary()}")
 
                 send_metrics(    run_id,
                         status,
@@ -1132,29 +1172,49 @@ class TranslationOrchestrator:
                         llm_call_count          = self.token_tracker.total_calls,
                     )
 
-                langs = [l for l in discovery_list if l]
-                self.log_post_comment(domain, slug, build_history_comment(
+                failed = [l for l in langs if l not in success_list and l not in skipped_list]
+                kept = self.get_link_localizer(domain).kept_english
+                if kept:
+                    info(f"    🔗 EN links kept: {format_kept_links(kept, langs)}")
+
+                history = self.log_post_comment(domain, slug, build_history_comment(
                     total        = len(langs),
                     succeeded    = success_list,
                     skipped      = skipped_list,
-                    failed       = [l for l in langs if l not in success_list and l not in skipped_list],
-                    kept_english = self.get_link_localizer(domain).kept_english,
+                    failed       = failed,
+                    kept_english = kept,
                     lang_order   = langs,
                 ))
+                head = result_head(len(langs), success_list, skipped_list, failed)
+                info(f"    Result: {head} · {fmt_duration(end_time - start_time)}"
+                     f" · {fmt_tokens(self.token_tracker.total_tokens)} tokens · {history}")
+                run_results[head.split()[0]] += 1
+                run_tokens += self.token_tracker.total_tokens
 
             except Exception as e:
                 # Isolate per-post failures: log and move on to the next post
                 # instead of aborting the whole run. Skipped languages are
                 # counted in items_failed below.
                 status = "error"
-                print(f"❌ Error during Translation of {item[:3]}: {e}")
-                traceback.print_exc()
+                error = f"{type(e).__name__}: {e}"
+                with group(f"{item[2] if len(item) > 2 else 'post'} · traceback"):
+                    traceback.print_exc()
+                history = ""
                 if len(item) > 2:
-                    self.log_post_comment(item[0], item[2], build_history_comment(error=f"{type(e).__name__}: {e}"))
-                print("⏭️  Skipping to the next post...")
+                    history = " · " + self.log_post_comment(item[0], item[2], build_history_comment(error=error))
+                info(f"    Result: {result_head(error=error)}{history}")
+                info("    ⏭️  Skipping to the next post...")
+                run_results["❌"] += 1
+                run_tokens += self.token_tracker.total_tokens
                 continue
 
         missing_translations_stats.items_failed = missing_translations_stats.items_discovered - missing_translations_stats.items_succeeded
+
+        s = missing_translations_stats
+        info(f"\n═══ Run summary — {currentDomain} ({'PROD' if config.PRODUCTION_ENV else 'DEV'})")
+        info(f"    Posts: {n_posts} → " + "  ".join(f"{e} {run_results[e]}" for e in ("✅", "⚠️", "❌", "⏭️") if run_results[e]))
+        info(f"    Languages: {s.items_succeeded + s.items_skipped}/{s.items_discovered}"
+             f" · {fmt_duration(time.time() - total_start_time)} · {fmt_tokens(run_tokens)} tokens")
 
         return missing_translations_stats
 
@@ -1243,35 +1303,35 @@ class TranslationOrchestrator:
         Returns:
             Path to output file
         """
-        print(f"\n{'='*60}")
-        print(f"🌍 Translating: {input_path} → {target_lang}")
-        print(f"{'='*60}")
+        detail(f"\n{'='*60}")
+        detail(f"🌍 Translating: {input_path} → {target_lang}")
+        detail(f"{'='*60}")
         
         # ============================================================================
         # Step 1: Parse markdown file
         # ============================================================================
-        print("📄 Step 1: Parsing markdown file...")
+        detail("📄 Step 1: Parsing markdown file...")
         parsed = parse_markdown_file(input_path)
         frontmatter = parsed['frontmatter']
         content = parsed['content']
-        print(f"   ✓ Parsed frontmatter with {len(frontmatter)} fields")
-        print(f"   ✓ Content: {len(content)} characters")
+        detail(f"   ✓ Parsed frontmatter with {len(frontmatter)} fields")
+        detail(f"   ✓ Content: {len(content)} characters")
 
         # ============================================================================
         # Step 2: Translate frontmatter using FrontmatterAgent
         # ============================================================================
-        print(f"\n📋 Step 2: Translating frontmatter ({self.frontmatter_agent.name})...")
+        detail(f"\n📋 Step 2: Translating frontmatter ({self.frontmatter_agent.name})...")
         translated_frontmatter = self.frontmatter_agent.translate(
             domain,
             frontmatter, 
             target_lang
         )
-        print("   ✓ Frontmatter translated")
+        detail("   ✓ Frontmatter translated")
         
         # ============================================================================
         # Step 3: Translate content using ContentAgent
         # ============================================================================
-        print(f"\n📝 Step 3: Translating content ({self.content_agent.name})...")
+        detail(f"\n📝 Step 3: Translating content ({self.content_agent.name})...")
         translated_content = self.content_agent.translate(
             domain,
             content, 
@@ -1290,7 +1350,7 @@ class TranslationOrchestrator:
         # ============================================================================
         # Step 5: Write output file
         # ============================================================================
-        print("\n💾 Step 4: Writing output file...")
+        detail("\n💾 Step 4: Writing output file...")
         input_file = Path(input_path)
         output_path = input_file.parent / f"index.{target_lang}.md"
         
@@ -1299,11 +1359,11 @@ class TranslationOrchestrator:
             translated_frontmatter, 
             translated_content
         )
-        print(f"   ✓ Saved to: {output_path}")
+        detail(f"   ✓ Saved to: {output_path}")
         
-        print(f"\n{'='*60}")
-        print(f"✅ Translation complete!")
-        print(f"{'='*60}\n")
+        detail(f"\n{'='*60}")
+        detail(f"✅ Translation complete!")
+        detail(f"{'='*60}\n")
         
         return str(output_path)
     
@@ -1353,7 +1413,12 @@ def build_parser():
         required=False,
         help="LIMIT NUMBER OF POSTS to translate (optional)"
     )
-    
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print step-by-step details (paragraphs, token usage, payloads). Same as TRANSLATION_VERBOSE=1"
+    )
+
     return parser
 
 # ============================================================================
@@ -1418,7 +1483,7 @@ def filter_extra_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
 # ============================================================================
 
 def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
-    print("⚠️  start_translation Called ⚠️")
+    detail("⚠️  start_translation Called ⚠️")
     start_time = time.time()
     status = "success"
     try:
@@ -1448,13 +1513,14 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
 
         posts_list = posts_list_to_translate or (parsed.posts_list if parsed else None)
 
-        print("Domain:", currentDomain)
-        print("Product:", target_product)
-        print("Author:", target_author)
-        print("Limit:", translation_limit)
+        if parsed and getattr(parsed, "verbose", False):
+            set_verbose(True)
+
+        info(f"═══ Translation run — {currentDomain} ({'PROD' if config.PRODUCTION_ENV else 'DEV'})")
+        info(f"    Filters: product={target_product or 'ALL'} · author={target_author or 'ALL'} · limit={translation_limit}")
 
         if posts_list is None:
-            print("Posts List Found NONE - READING FROM GOOGLE SHEET")
+            detail("Posts List Found NONE - READING FROM GOOGLE SHEET")
             
             if config.PRODUCTION_ENV:
                 posts_list = read_from_google_spreadsheet(config.domains_data[currentDomain][config.KEY_SHEET_ID])
@@ -1474,23 +1540,20 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
         extra_rows = filter_extra_rows(raw_posts_list) if raw_posts_list else []
 
         if not posts_list and not extra_rows:
-            print("="*60)
-            print(f"No missing translations or extra files found for domain: {currentDomain} — nothing to do.")
-            print("="*60)
+            info(f"    Nothing to do: no missing translations or extra files for {currentDomain}.")
             return
 
         # PRINTING POSTS LIST ==========================
         if posts_list is not None:
-            print("="*60)
+            detail(f"    Sheet rows before filters: {len(posts_list)}")
             for post in posts_list:
-                print(post[1], " > ", post[2], " by ", post[3])
-            print("="*60)
+                detail(f"      {post[1]} > {post[2]} by {post[4]}")
 
         # ======================
         # FILTER by AUTHOR
         # ======================
         if target_author is not None and posts_list is not None:
-            posts_list = [row for row in posts_list if row[3].strip().lower() == target_author.strip().lower()]
+            posts_list = [row for row in posts_list if row[4].strip().lower() == target_author.strip().lower()]
         if target_author is not None and extra_rows:
             extra_rows = [row for row in extra_rows if row[4].strip().lower() == target_author.strip().lower()]
 
@@ -1516,27 +1579,21 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
         orchestrator = TranslationOrchestrator(api_key=key)
 
         if not posts_list and not extra_rows:
-            print("="*60)
-            print(f"There is nothing to translate or delete....: {posts_list}")
-            print("="*60)
+            info("    Nothing to translate or delete after filters.")
 
         else:
             if posts_list:
-                print(f"Starting Translation for {len(posts_list)} posts.")
-                # PRINTING POSTS LIST ==========================
-                print("="*60)
-                for post in posts_list:
-                    print(post[1], " > ", post[2], "\tby\t>\t", post[4])
-                print("="*60)
+                info(f"    Queue: {len(posts_list)} post(s)")
+                for no, post in enumerate(posts_list, 1):
+                    n_langs = len([l for l in post[7].split(',') if l.strip()])
+                    info(f"      {no}. {post[1]}/{post[2]} · {post[4]} · {n_langs} langs")
 
                 metrics = orchestrator.translate_files(currentDomain, target_author, translation_limit, posts_list)
 
             if extra_rows:
-                print(f"Deleting extra/junk files for {len(extra_rows)} posts.")
-                print("="*60)
+                info(f"\n    Deleting extra/junk files for {len(extra_rows)} post(s)")
                 for row in extra_rows:
-                    print(row[1], " > ", row[2], "\tby\t>\t", row[4], "\textra:\t", row[7])
-                print("="*60)
+                    info(f"      {row[1]}/{row[2]} · {row[4]} · extra: {row[7]}")
 
                 orchestrator.delete_extra_files(currentDomain, extra_rows)
 
@@ -1570,6 +1627,6 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
 
 # Example usage
 if __name__ == "__main__":
-    print("⚠️  Main Called ⚠️")
+    detail("⚠️  Main Called ⚠️")
     start_translation(sys.argv[1:])
 
