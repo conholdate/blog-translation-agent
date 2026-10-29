@@ -21,6 +21,7 @@ import random
 import os
 
 from utils import send_metrics
+from link_localizer import LinkLocalizer
 from config import Stats
 
 
@@ -531,8 +532,8 @@ class ContentTranslatorAgent:
                     - API endpoints
 
                 4. Maintain the same structure and formatting
-                5. If a URL contains domain name "{domain}", add language code "{target_lang}" at the end of URL
-                    - (e.g., turn such urls (https://{domain}/cells/<rest of URL>/) to this (https://{domain}/{target_lang}/cells/<rest of URL>) )
+                5. Keep every URL exactly as in the original. Do NOT add a language code to links
+                    (e.g., keep https://{domain}/cells/<rest of URL>/ unchanged); language prefixes are added afterwards.
                 6. Do NOT include any markers or identifier like ```markdown``` at the start or end of the translated content.
                 7. Keep the same tone and style
                 8. Keep technical terms accurate
@@ -888,7 +889,30 @@ class TranslationOrchestrator:
 
         self.platform_agent = PlatformIdentifierAgent(self.client, self.config)
         self.platform_agent.token_tracker = self.token_tracker
-    
+
+        # One LinkLocalizer per domain, built lazily (the retranslator calls
+        # translate_file() directly, without translate_files()).
+        self.link_localizers: Dict[str, LinkLocalizer] = {}
+
+    def get_link_localizer(self, domain: str) -> LinkLocalizer:
+        if domain not in self.link_localizers:
+            blog_main_repo = self.config.domain_map.get(domain)
+            if not blog_main_repo:
+                raise ValueError(f"Unknown domain Provided: {domain}")
+            self.link_localizers[domain] = LinkLocalizer(domain, f"blog-checkedout-repo/content/{blog_main_repo}")
+        return self.link_localizers[domain]
+
+    def queue_translations(self, posts_list: List[List[Any]]):
+        """Register every queued (post, lang) so links to posts translated later in this run count as existing."""
+        for row in posts_list:
+            try:
+                localizer = self.get_link_localizer(row[0])
+                for lang in row[7].split(','):
+                    if lang.strip():
+                        localizer.queue(row[1], row[2], lang)
+            except Exception as e:
+                print(f"⚠️  Could not queue {row[:3]} for link localization: {e}")
+
     # ============================================================================
     # TRANSLATE ALL FILES IN ALL MISSING LANGUAGES
     # ============================================================================
@@ -903,6 +927,8 @@ class TranslationOrchestrator:
         total_status = "success"
 
         print(f"   Translating {len(posts_list_to_translate)} Items")
+
+        self.queue_translations(posts_list_to_translate)
 
         for item in posts_list_to_translate:
 
@@ -1178,20 +1204,11 @@ class TranslationOrchestrator:
         # ============================================================================
         # Step 4: Perform any final adjustments if needed
         # ============================================================================
-        # if translated_content contains currentDomain and does not contain /{target_lang}/, add it.
-        # do this on all the occurrences.
+        # Add the language prefix to internal post links only where that
+        # translation exists (on disk or queued in this run); keep the rest in
+        # English so translations don't link to 404 pages.
+        translated_content = self.get_link_localizer(domain).localize(translated_content, target_lang)
 
-        translated_content_adjusted = re.sub(
-            rf"(https?://{re.escape(domain)}/)(?!{re.escape(target_lang)}/)", 
-            rf"\1{target_lang}/",
-            translated_content
-        )
-        # ============================================================================
-        # if translated and adjusted is different, mean prompt missed some, so replace.
-        # ============================================================================
-        if translated_content != translated_content_adjusted:
-            translated_content = translated_content_adjusted
-            print(f"⚠️   ✓ Adjusted Content translated:\n{translated_content}\n")        
         # ============================================================================
         # Step 5: Write output file
         # ============================================================================
