@@ -51,6 +51,8 @@ class LinkLocalizer:
         self.url_index = build_url_index(content_root)
         # (post folder, lang) pairs that will be translated in this run
         self.queued: Set[Tuple[str, str]] = set()
+        # English path -> langs it was kept in English for (reset per post)
+        self.kept_english: Dict[str, Set[str]] = {}
 
         host = re.escape(domain)
         # Absolute links to this blog, or root-relative links in markdown / href targets
@@ -81,6 +83,7 @@ class LinkLocalizer:
             return prefix + english.lstrip('/')
         if exists is False:
             print(f"   🔗 Kept English link (no '{lang}' translation): {english}")
+            self.kept_english.setdefault(english, set()).add(lang)
         return english
 
     def _localize_segment(self, text: str, lang: str) -> str:

@@ -22,8 +22,10 @@ HISTORY_TAB             = "history"
 HISTORY_HEADERS         = [
     "Scan Date", "Domain", "Product", "Blog Post Directory",
     "Blog Post URL", "Author", "Issue", "Target Translations", "Count",
-    "Status", "Completed Date",
+    "Status", "Completed Date", "Comments",
 ]
+HISTORY_COMMENTS_HEADER  = "Comments"
+HISTORY_COMMENT_MAX_LEN  = 45000    # Sheets cell limit is 50,000 chars
 HISTORY_STATUS_PENDING   = "pending"
 HISTORY_STATUS_PARTIAL   = "partial"
 HISTORY_STATUS_COMPLETED = "completed"
@@ -135,6 +137,69 @@ def write_domain_scan_results(domain: str, scan_date: str, rows: List[list], hea
         return False
 
 
+def _ensure_history_columns(ws: gspread.Worksheet) -> None:
+    """
+    Add any HISTORY_HEADERS missing from an existing history tab (e.g. 'Comments'
+    on a tab created before that column existed), widening the grid if needed.
+    update_history_tab() writes full HISTORY_HEADERS-wide rows, so the grid
+    must be at least that wide.
+    """
+    header = ws.row_values(1)
+    missing = [h for h in HISTORY_HEADERS if h not in header]
+    if not missing:
+        return
+    needed = len(header) + len(missing)
+    if ws.col_count < needed:
+        ws.add_cols(needed - ws.col_count)
+    ws.update([missing], f"{gspread.utils.rowcol_to_a1(1, len(header) + 1)}", value_input_option="USER_ENTERED")
+    print(f"✅ Added column(s) {missing} to '{HISTORY_TAB}' worksheet.")
+
+
+def append_history_comment(domain: str, slug: str, comment: str, issue: str = "MISSING") -> bool:
+    """
+    Append a comment block to the open (not completed) history row for
+    (domain, slug, issue). Earlier comments on that row are kept above it,
+    separated by a blank line.
+
+    Returns True on success, False if the row or sheet can't be reached.
+    Never raises — comment logging must not halt the pipeline.
+    """
+    try:
+        ws = _get_history_worksheet()
+        if not ws:
+            return False
+
+        all_rows = ws.get_all_values()
+        header   = all_rows[0] if all_rows else []
+        c_domain, c_slug, c_issue, c_status = (header.index(h) for h in
+            ("Domain", "Blog Post Directory", "Issue", "Status"))
+        c_comments = header.index(HISTORY_COMMENTS_HEADER)
+
+        sheet_row = None
+        for i, row in enumerate(all_rows[1:], start=2):
+            row = row + [""] * (len(header) - len(row))
+            if (row[c_domain] == domain and row[c_slug] == slug
+                    and row[c_issue] == issue and row[c_status] != HISTORY_STATUS_COMPLETED):
+                sheet_row = i     # keep the last match
+                existing  = row[c_comments]
+
+        if sheet_row is None:
+            print(f"⚠️  No open history row for {domain}/{slug} ({issue}); comment not logged.")
+            return False
+
+        text = f"{existing}\n\n{comment}" if existing else comment
+        if len(text) > HISTORY_COMMENT_MAX_LEN:
+            text = text[-HISTORY_COMMENT_MAX_LEN:]    # drop the oldest lines first
+
+        ws.update_cell(sheet_row, c_comments + 1, text)
+        print(f"✅ History comment logged for {slug} (row {sheet_row}).")
+        return True
+
+    except Exception as e:
+        print(f"⚠️  Failed to log history comment for {domain}/{slug}: {e}", file=sys.stderr)
+        return False
+
+
 def _get_history_worksheet() -> gspread.Worksheet:
     """Return the 'history' worksheet, creating it if it doesn't exist."""
     gc = get_scan_gc()
@@ -143,7 +208,9 @@ def _get_history_worksheet() -> gspread.Worksheet:
     try:
         sh = gc.open_by_key(config.TRANSLATION_SCAN_SHEET_ID)
         try:
-            return sh.worksheet(HISTORY_TAB)
+            ws = sh.worksheet(HISTORY_TAB)
+            _ensure_history_columns(ws)
+            return ws
         except gspread.exceptions.WorksheetNotFound:
             ws = sh.add_worksheet(title=HISTORY_TAB, rows=5000, cols=len(HISTORY_HEADERS))
             ws.append_row(HISTORY_HEADERS, value_input_option="USER_ENTERED")
@@ -251,7 +318,7 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
         new_rows = [
             [
                 scan_date, r[0], r[1], r[2], r[3], r[4], r[5],
-                r[7], str(r[6]), HISTORY_STATUS_PENDING, "",
+                r[7], str(r[6]), HISTORY_STATUS_PENDING, "", "",
             ]
             for r in current_rows
             if len(r) >= 8 and r[0] and r[2]

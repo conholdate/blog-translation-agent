@@ -93,6 +93,8 @@ Blog Translation Agent
     3. Translate English index.md → index.{lang}.md
     4. Write translated file to blog-checkedout-repo/content/...
     5. Send metrics to Google Sheets
+    6. Append a per-post comment (result, failed languages, EN links kept) to the
+       "Comments" column of the scan sheet's `history` tab — production only; local runs print it
 
   Step 3 — Quality Check
     Phase A — Scanner

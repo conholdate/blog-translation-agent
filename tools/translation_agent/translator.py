@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from openai import OpenAI
 from dataclasses import dataclass, field
-from io_google_spreadsheet import read_from_google_spreadsheet
+from io_google_spreadsheet import read_from_google_spreadsheet, append_history_comment
 import json
 import argparse
 import config
@@ -277,6 +277,58 @@ def write_markdown_file(file_path: str, frontmatter: Dict[str, Any], content: st
 
 
 # Product names protection removed - handled in prompts instead
+
+
+def _short_langs(langs: List[str], shown: int = 3) -> str:
+    """['fr', 'ar', 'de', 'es'] -> 'fr, ar, de +1'"""
+    head = ", ".join(langs[:shown])
+    return f"{head} +{len(langs) - shown}" if len(langs) > shown else head
+
+
+def build_history_comment(total: int = 0,
+                          succeeded: List[str] = (),
+                          skipped: List[str] = (),
+                          failed: List[str] = (),
+                          kept_english: Dict[str, set] = None,
+                          lang_order: List[str] = (),
+                          error: str = None,
+                          draft: bool = False,
+                          date: str = None) -> str:
+    """
+    Build the per-post comment for the history tab, e.g.
+
+        - Date: 2026-10-29
+        - ⚠️ Partial 18/21
+        - Failed: fa, he, uk
+        - EN links kept (translated URL would be 404): /total/foo/ [fr, ar, de +18]
+    """
+    date = date or time.strftime("%Y-%m-%d")
+    done = len(succeeded) + len(skipped)
+
+    if draft:
+        head = "⏭️ Skipped: draft"
+    elif error:
+        head = "❌ Failed: " + " ".join(str(error).split())[:200]
+    elif failed and done == 0:
+        head = f"❌ Failed 0/{total}"
+    elif failed:
+        head = f"⚠️ Partial {done}/{total}"
+    else:
+        head = f"✅ Translated {done}/{total}"
+
+    lines = [f"- Date: {date}", f"- {head}"]
+    if failed and not error:
+        lines.append(f"- Failed: {', '.join(failed)}")
+    if skipped:
+        lines.append(f"- Already existed: {', '.join(skipped)}")
+    if kept_english:
+        order = {lang: i for i, lang in enumerate(lang_order)}
+        links = "; ".join(
+            f"{path} [{_short_langs(sorted(langs, key=lambda l: (order.get(l, len(order)), l)))}]"
+            for path, langs in sorted(kept_english.items())
+        )
+        lines.append(f"- EN links kept (translated URL would be 404): {links}")
+    return "\n".join(lines)
 
 
 def update_url_with_language(url: str, lang_code: str) -> str:
@@ -902,6 +954,16 @@ class TranslationOrchestrator:
             self.link_localizers[domain] = LinkLocalizer(domain, f"blog-checkedout-repo/content/{blog_main_repo}")
         return self.link_localizers[domain]
 
+    def log_post_comment(self, domain: str, slug: str, comment: str):
+        """Print the per-post comment; in production also append it to the history tab."""
+        print(f"\n📝 History comment for {slug}:\n{comment}\n")
+        if not config.PRODUCTION_ENV:
+            return      # local runs never write into the production history tab
+        try:
+            append_history_comment(domain, slug, comment)
+        except Exception as e:
+            print(f"⚠️  Could not log history comment for {slug}: {e}")
+
     def queue_translations(self, posts_list: List[List[Any]]):
         """Register every queued (post, lang) so links to posts translated later in this run count as existing."""
         for row in posts_list:
@@ -934,7 +996,10 @@ class TranslationOrchestrator:
 
             # Reset token tracker for each post so metrics are per-post
             self.token_tracker.reset()
- 
+            # Kept-English links are reported per post
+            for localizer in self.link_localizers.values():
+                localizer.kept_english.clear()
+
             start_time = time.time()
             status = "success"
             
@@ -987,6 +1052,7 @@ class TranslationOrchestrator:
                 # translations once published, so skip translating them altogether.
                 if frontmatter.get('draft') is True:
                     print(f"⚠️  Skipping {slug}: source index.md is marked draft: true")
+                    self.log_post_comment(domain, slug, build_history_comment(draft=True))
                     continue
 
                 full_content = f"---\n{yaml.dump(frontmatter, allow_unicode=True, sort_keys=False, default_flow_style=False)}---\n\n{post_content}"
@@ -1065,7 +1131,17 @@ class TranslationOrchestrator:
                         llm_total_tokens        = self.token_tracker.total_tokens,
                         llm_call_count          = self.token_tracker.total_calls,
                     )
-            
+
+                langs = [l for l in discovery_list if l]
+                self.log_post_comment(domain, slug, build_history_comment(
+                    total        = len(langs),
+                    succeeded    = success_list,
+                    skipped      = skipped_list,
+                    failed       = [l for l in langs if l not in success_list and l not in skipped_list],
+                    kept_english = self.get_link_localizer(domain).kept_english,
+                    lang_order   = langs,
+                ))
+
             except Exception as e:
                 # Isolate per-post failures: log and move on to the next post
                 # instead of aborting the whole run. Skipped languages are
@@ -1073,6 +1149,8 @@ class TranslationOrchestrator:
                 status = "error"
                 print(f"❌ Error during Translation of {item[:3]}: {e}")
                 traceback.print_exc()
+                if len(item) > 2:
+                    self.log_post_comment(item[0], item[2], build_history_comment(error=f"{type(e).__name__}: {e}"))
                 print("⏭️  Skipping to the next post...")
                 continue
 
