@@ -843,16 +843,21 @@ class ContentTranslatorAgent:
 
         The model sometimes "fixes" quoting it wasn't asked to touch by wrapping
         attribute values in escaped quotes/parentheses (e.g. src=(\\"...\\")), which
-        Hugo cannot parse. Flag these patterns only if they weren't already present
-        in the original content.
+        Hugo cannot parse, or by damaging the closing delimiter (e.g. caption="..."}>}}).
+        Flag these patterns only if they weren't already present in the original content.
         """
         corrupted_patterns = [
             r'=\(\\?"',   # src=(" or src=(\"
             r'\\"\)',     # ...\")
             r'=\\"',      # src=\"
+            r'\}\s*>\}\}',  # stray } before the closing >}}
         ]
         for pattern in corrupted_patterns:
             if re.search(pattern, translated) and not re.search(pattern, original):
+                return True
+        # A delimiter the model altered or dropped no longer counts as one.
+        for delimiter in ('{{<', '>}}'):
+            if translated.count(delimiter) != original.count(delimiter):
                 return True
         return False
 

@@ -62,6 +62,33 @@ class TestShortcodeSyntaxCorrupted:
         translated = 'raro src=("img.png")'
         assert agent._shortcode_syntax_corrupted(original, translated) is False
 
+    def test_flags_stray_brace_before_closing_delimiter(self, agent):
+        # Real failure: broke the Hugo build on a Persian translation.
+        original = '{{< figure src="a.jpg" caption="Waterfall chart.">}}'
+        translated = '{{< figure src="a.jpg" caption="نمودار آبشاری."}>}}'
+        assert agent._shortcode_syntax_corrupted(original, translated) is True
+
+    def test_flags_damaged_closing_delimiter(self, agent):
+        original = '{{< figure src="a.jpg" caption="Chart.">}}'
+        translated = '{{< figure src="a.jpg" caption="Gráfico."> }}'
+        assert agent._shortcode_syntax_corrupted(original, translated) is True
+
+    def test_flags_damaged_opening_delimiter(self, agent):
+        original = '{{< figure src="a.jpg" caption="Chart.">}}'
+        translated = '{ {< figure src="a.jpg" caption="Gráfico.">}}'
+        assert agent._shortcode_syntax_corrupted(original, translated) is True
+
+    def test_clean_shortcode_translation_is_not_flagged(self, agent):
+        # Added space before >}} is valid Hugo and common in real translations.
+        original = '{{< figure src="a.jpg" caption="Chart.">}}'
+        translated = '{{< figure src="a.jpg" caption="Gráfico." >}}'
+        assert agent._shortcode_syntax_corrupted(original, translated) is False
+
+    def test_brace_already_in_original_caption_is_not_flagged(self, agent):
+        original = '{{< figure src="a.jpg" caption={x}>}}'
+        translated = '{{< figure src="a.jpg" caption={x}>}}'
+        assert agent._shortcode_syntax_corrupted(original, translated) is False
+
 
 # ============================================================================
 # _code_fence_count_mismatched
