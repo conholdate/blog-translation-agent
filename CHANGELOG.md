@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- Translated `title`, `seoTitle` and `description` are kept within search-result length (70 / 70 / 170 display width, East Asian characters count 2, the Health and Recovery audit's rule): a longer translation is shortened by a second LLM call that keeps product names (`TranslationConfig.length_limits`, `FrontmatterTranslatorAgent._fit_length`). Found 12 Nov 2026: the Java merge post's new translations had titles up to 82 and descriptions up to 197 wide
 - `Issue` (`MISSING`/`EXTRA`) and `Action` (`Translate`/`Delete`) columns in the scan sheet — each flagged post now produces separate MISSING and/or EXTRA rows instead of one ambiguous combined row, so the sheet is directly actionable
 - `TranslationOrchestrator.delete_extra_files()` / `filter_extra_rows()` in `translator.py` — deletes junk/extra files flagged by `EXTRA`-issue scan rows (reconstructed as `index.<fragment>.md`), using the same `git add content/` → commit → push mechanism as translations
 - `AI Decision` + `AI Decision Reason` sheet columns — the LLM validation pass now returns an explicit RETRANSLATE/KEEP decision and reason instead of the retranslator independently re-deriving that call from a hardcoded `--threshold`

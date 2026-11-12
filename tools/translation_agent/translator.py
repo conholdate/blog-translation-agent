@@ -135,6 +135,16 @@ class TranslationConfig:
         'faqs'
     ]
 
+    # Search-result length per front-matter field: display width, East Asian wide characters count 2 (the same rule
+    # as the Health and Recovery audit, which flags titles outside 10-70 and descriptions outside 50-170). A
+    # translation that comes out longer is shortened by a second LLM call (2026-11-12: the Java merge post's German
+    # title was 82 wide, its description 197).
+    length_limits = {
+        'title': 70,
+        'seoTitle': 70,
+        'description': 170,
+    }
+
     # Product name examples for prompt (not translated)
     product_examples = [
         "Aspose.PDF for .NET",
@@ -363,6 +373,12 @@ def update_url_with_language(url: str, lang_code: str) -> str:
 # AGENTS - Specialized agents for different tasks
 # ============================================================================
 
+def display_width(text: str) -> int:
+    """Rendered width as search results cut it: East Asian wide and full-width characters count 2."""
+    import unicodedata
+    return sum(2 if unicodedata.east_asian_width(ch) in ("W", "F") else 1 for ch in text)
+
+
 class FrontmatterTranslatorAgent:
     """Agent responsible for translating frontmatter fields"""
     
@@ -417,6 +433,9 @@ class FrontmatterTranslatorAgent:
             # Handle different field types
             if isinstance(value, str):
                 translated_value = self._translate_text(value, target_lang)
+                limit = self.config.length_limits.get(field)
+                if limit and display_width(translated_value) > limit:
+                    translated_value = self._fit_length(field, value, translated_value, target_lang, limit)
                 self.set_nested_value(translated_fm, field, translated_value)
             
             elif isinstance(value, list):
@@ -432,6 +451,37 @@ class FrontmatterTranslatorAgent:
         
         return translated_fm
     
+    def _fit_length(self, field: str, original: str, translated: str, target_lang: str, limit: int,
+                    attempts: int = 2) -> str:
+        """Shorten a translated title or description to `limit` display width (CJK counts double), keeping its
+        meaning and product names. Returns the first attempt that fits, else the shortest one (never longer than
+        the input)."""
+        best = translated
+        lang = self.config.language_names.get(target_lang, target_lang)
+        for attempt in range(attempts):
+            prompt = f"""Shorten this {lang} {field} of a blog post so it is at most {limit} characters long
+            (each Chinese, Japanese or Korean character counts as 2). Keep the meaning, keep the language, and keep
+            product names EXACTLY as they are (e.g. Conholdate.Total Cloud SDK for Java). Drop filler such as
+            "step-by-step guide" first. Provide ONLY the shortened text, no quotes or explanations.
+
+            English original: {original}
+            Current {lang} text ({display_width(best)} characters): {best}"""
+            shortened, usage = call_openai(
+                self.client,
+                "You are a professional technical translator who writes concise search titles and descriptions.",
+                prompt,
+                temperature=0.2,
+            )
+            if self.token_tracker:
+                self.token_tracker.record(usage, "frontmatter_shorten")
+            shortened = (shortened or "").strip().strip('"').strip("'").strip()
+            if shortened and display_width(shortened) < display_width(best):
+                best = shortened
+            if display_width(best) <= limit:
+                break
+        detail(f"   ✂️  {field} {target_lang}: {display_width(translated)} → {display_width(best)} wide (limit {limit})")
+        return best
+
     def _translate_list(self, items: List, target_lang: str) -> List:
         """Translate list items (steps, FAQs, etc.)"""
         translated_list = []
