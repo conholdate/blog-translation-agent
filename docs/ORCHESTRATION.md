@@ -44,6 +44,13 @@ A post with several issues produces one row per issue.
 - A fix committed to `index.md` **and** its translations in the same commit leaves them equal → not
   outdated. A fix committed to `index.md` only → flagged. So: when fixing something in every language
   (a URL, an image), commit the English file together with the translations.
+- A commit that changed `index.md` together with **only some** translations (e.g. a Health and
+  Recovery fix, "Fixed parsing errors.") still flags the untouched translations as OUTDATED and they
+  are retranslated. The Notes then end with `; same commit changed 18 of 22 translations` (counted in
+  the same `git log` pass, `git_history()` → files per commit) — information only. A Review step for
+  these was considered and rejected on 17 Nov 2026: about 26 such posts on the 5 maintained blogs
+  (blog.aspose.com 21, blog.aspose.cloud 4, blog.conholdate.cloud 1; blog.groupdocs.com 116), cheaper
+  to retranslate than to review, and a full retranslation fixes other issues in the post too.
 - Translations not committed yet are never reported.
 - Needs the blog repo's full history: `scan-missing-translations.yml` checks out with
   `fetch-depth: 0`. With no git history (e.g. the gitignored local test mirror
@@ -252,8 +259,10 @@ The first scans with the OUTDATED check flag a large backlog (local clones of 13
 ~250 runs; the newest-first order clears the last 30 days (~130 posts) in ~45 runs. The optimizer
 adds ~3 outdated posts a day on blog.aspose.com alone.
 
-**Planned (not built):** retranslate only the changed parts of a post (git diff of `index.md` →
-changed frontmatter fields and paragraphs), which would cut cost and time several times over.
+**Idea (not planned):** retranslate only the changed parts of a post (git diff of `index.md` →
+changed frontmatter fields and paragraphs), which would cut cost and time several times over. Full
+retranslation stays the default because it also fixes other issues in a translation (owner,
+17 Nov 2026); partial retranslation is only an option for clearing the backlog, built only if asked.
 
 ### Retry Logic (Step 2)
 

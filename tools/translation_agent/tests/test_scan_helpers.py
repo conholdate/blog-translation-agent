@@ -63,7 +63,10 @@ class TestReadPostMeta:
 # ---------------------------------------------------------------------------
 
 def _git(repo, *args, date=None):
-    env = dict(os.environ)
+    # The repo's user.name/email must apply: an exported git identity (as when
+    # committing as the owner) would override it and break author assertions
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL")}
     if date:
         env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = date
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True, env=env)
@@ -168,7 +171,8 @@ class TestLastCommits:
         _commit(repo, {f"{POST}/index.md": "v1"}, "2026-01-01T00:00:00+00:00", msg="published post")
         _commit(repo, {f"{POST}/index.md": "v2"}, "2026-02-01T00:00:00+00:00", msg="Optimized Blog Posts")
         c = last_commits(str(repo / "content" / "Blog"))[f"{POST}/index.md"]
-        assert c == Commit(1769904000, "Test Bot", "Optimized Blog Posts")
+        assert (c.time, c.author, c.subject) == (1769904000, "Test Bot", "Optimized Blog Posts")
+        assert len(c.sha) == 40
 
     def test_subject_with_tabs_and_unicode(self, repo):
         _commit(repo, {f"{POST}/index.md": "v1"}, "2026-01-01T00:00:00+00:00", msg="Fix «links»\tagain")
@@ -209,3 +213,39 @@ class TestNotes:
 
     def test_outdated_note_without_english_commit(self):
         assert outdated_note({}, POST, ["de"]) == ""
+
+
+class TestSameCommitChangedTranslations:
+    COMMITS = {
+        f"{POST}/index.md":         Commit(1763251200, "Shoaib Khan", "Shorten descriptions", "abc"),
+        f"{POST}/index.de.md":      Commit(1763251200, "Shoaib Khan", "Shorten descriptions", "abc"),
+        f"{POST}/index.he.md":      Commit(1746748800, "bot", "t", "old"),
+        f"{POST}/index.zh.md":      Commit(1746748800, "bot", "t", "old"),
+    }
+    FILES = {"abc": {f"{POST}/index.md", f"{POST}/index.de.md"}, "old": {f"{POST}/index.he.md"}}
+
+    def test_fix_across_some_languages_is_noted(self):
+        note = outdated_note(self.COMMITS, POST, ["he", "zh"], files_by_sha=self.FILES,
+                             present_langs=["de", "he", "zh"])
+        assert note.endswith("translations from 2025-05-09; same commit changed 1 of 3 translations")
+
+    def test_english_only_commit_has_no_addition(self):
+        files = {"abc": {f"{POST}/index.md"}}
+        note = outdated_note(self.COMMITS, POST, ["he"], files_by_sha=files, present_langs=["de", "he"])
+        assert "same commit" not in note
+
+    def test_without_history_details_has_no_addition(self):
+        assert "same commit" not in outdated_note(self.COMMITS, POST, ["he"])
+
+
+class TestGitHistory:
+    def test_files_by_sha_lists_each_commits_files(self, repo):
+        from scan_helpers import git_history
+        _commit(repo, {f"{POST}/index.md": "v1", f"{POST}/index.de.md": "de"}, "2026-01-01T00:00:00+00:00")
+        commits, files = git_history(str(repo / "content" / "Blog"))
+        sha = commits[f"{POST}/index.md"].sha
+        assert files[sha] == {f"{POST}/index.md", f"{POST}/index.de.md"}
+
+    def test_not_a_repo(self, tmp_path):
+        from scan_helpers import git_history
+        assert git_history(str(tmp_path)) == (None, {})

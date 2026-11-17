@@ -3,7 +3,8 @@ Helpers for the missing-translation scanner (scan_missing_translations.py),
 kept in their own module so they can be tested without running the scanner.
 
 - read_post_meta():      author / url / draft from a post's frontmatter
-- last_commits():        last git commit (time, author, subject) of every file under a folder
+- git_history():         last commit of every file under a folder + each commit's files
+- last_commits():        last git commit (time, author, subject, sha) of every file
 - last_commit_times():   the same, times only
 - outdated_langs():      translations whose index.md was committed after them
 - missing_note() / extra_note() / outdated_note(): the scan sheet's Notes text
@@ -12,7 +13,7 @@ kept in their own module so they can be tested without running the scanner.
 import re
 import subprocess
 from datetime import datetime, timezone
-from typing import Dict, List, NamedTuple, Optional
+from typing import Dict, List, NamedTuple, Optional, Set, Tuple
 
 _FRONTMATTER_RE = re.compile(r"\A---[ \t]*\r?\n(.*?)\r?\n---[ \t]*(?:\r?\n|\Z)", re.DOTALL)
 _AUTHOR_RE      = re.compile(r"^author:\s*['\"]?([^'\"]+?)['\"]?\s*$")
@@ -50,39 +51,50 @@ class Commit(NamedTuple):
     time: int        # unix seconds, committer date
     author: str
     subject: str
+    sha: str = ""
 
 
-def last_commits(folder: str) -> Optional[Dict[str, Commit]]:
+def git_history(folder: str) -> Tuple[Optional[Dict[str, Commit]], Dict[str, Set[str]]]:
     """
-    Map each file under `folder` (path relative to it, '/' separated) to the
-    latest commit that changed it.
+    One `git log` pass over `folder` — a few seconds for a whole blog. Returns
+    (last_commit_by_file, files_by_sha):
+      - last_commit_by_file: each file under `folder` (path relative to it, '/'
+        separated) -> the latest commit that changed it;
+      - files_by_sha: commit sha -> the files under `folder` it changed.
 
-    One `git log` pass over the folder — a few seconds for a whole blog. Needs the
-    full history (the scan workflow checks out with fetch-depth: 0).
-    Returns None when the folder isn't inside a git repo, has no committed files,
-    or git fails (e.g. the local test mirror), so the caller can skip the check.
+    Needs the full history (the scan workflow checks out with fetch-depth: 0).
+    last_commit_by_file is None when the folder isn't inside a git repo, has no
+    committed files, or git fails (e.g. the local test mirror), so the caller can
+    skip the check.
     """
     try:
         out = subprocess.run(
             ["git", "-c", "core.quotepath=off", "-C", folder, "log",
-             "--format=@%ct%x09%an%x09%s", "--name-only", "--relative", "--", "."],
+             "--format=@%H%x09%ct%x09%an%x09%s", "--name-only", "--relative", "--", "."],
             capture_output=True, text=True, encoding="utf-8", check=True,
         ).stdout
     except (OSError, subprocess.CalledProcessError):
-        return None
+        return None, {}
 
     commits: Dict[str, Commit] = {}
+    files_by_sha: Dict[str, Set[str]] = {}
     current = None
     for line in out.splitlines():
         if line.startswith("@"):
-            ts, _, rest = line[1:].partition("\t")
-            author, _, subject = rest.partition("\t")
-            current = Commit(int(ts), author, subject)
+            sha, ts, author, subject = (line[1:].split("\t", 3) + ["", "", "", ""])[:4]
+            current = Commit(int(ts), author, subject, sha)
+            files_by_sha[sha] = set()
         elif line and current:
+            files_by_sha[current.sha].add(line)
             # git log isn't strictly date-ordered across merges: keep the newest
             if line not in commits or current.time > commits[line].time:
                 commits[line] = current
-    return commits or None
+    return (commits or None), files_by_sha
+
+
+def last_commits(folder: str) -> Optional[Dict[str, Commit]]:
+    """Each file under `folder` -> its latest commit, or None (see git_history)."""
+    return git_history(folder)[0]
 
 
 def last_commit_times(folder: str) -> Optional[Dict[str, int]]:
@@ -125,11 +137,17 @@ def extra_note() -> str:
 
 
 def outdated_note(commits: Dict[str, Commit], post_rel_dir: str, langs: List[str],
-                  subject_max: int = 80) -> str:
+                  subject_max: int = 80, files_by_sha: Dict[str, Set[str]] = None,
+                  present_langs: List[str] = None) -> str:
     """
     E.g. 'English updated 2026-11-16 by optimizer-agent ("Optimized Blog Posts");
     translations from 2025-05-09' — the English file's last commit, and the
     date (or date range) of the outdated translations' last commits.
+
+    With files_by_sha and present_langs, a commit that also changed some of the
+    post's translations (a fix across languages, e.g. Health and Recovery) adds
+    '; same commit changed 18 of 22 translations'. Those rows are still
+    retranslated — information only (decided 17 Nov 2026).
     """
     en = commits.get(f"{post_rel_dir}/index.md")
     if not en:
@@ -140,4 +158,9 @@ def outdated_note(commits: Dict[str, Commit], post_rel_dir: str, langs: List[str
     if times:
         first, last = _date(times[0]), _date(times[-1])
         note += f"; translations from {first}" if first == last else f"; translations from {first} to {last}"
+    if files_by_sha and present_langs and en.sha:
+        changed = files_by_sha.get(en.sha, set())
+        n = sum(1 for l in present_langs if f"{post_rel_dir}/index.{l}.md" in changed)
+        if n:
+            note += f"; same commit changed {n} of {len(present_langs)} translations"
     return note

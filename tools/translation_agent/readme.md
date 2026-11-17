@@ -270,7 +270,9 @@ Scan results are automatically saved to Google Sheets with:
 - Action (`Translate`, `Delete` or `Retranslate`)
 - Status (filled by hand)
 - Notes — why the row was flagged, e.g. `New post`, `3 of 21 languages missing`,
-  `English updated 2026-11-16 by optimizer-agent ("Optimized Blog Posts"); translations from 2025-05-09`
+  `English updated 2026-11-16 by optimizer-agent ("Optimized Blog Posts"); translations from 2025-05-09`;
+  when the English commit also changed some translations (a fix across languages) it adds
+  `; same commit changed 18 of 22 translations` — the untouched ones are still retranslated
 - Direct links to details
 
 The consolidated sheet's domain tab also has Scan Date, Missing Since and Days Missing in front; the

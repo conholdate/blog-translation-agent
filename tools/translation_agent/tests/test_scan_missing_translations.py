@@ -32,7 +32,10 @@ def scanner():
 
 
 def _git(repo, *args, date=None):
-    env = dict(os.environ)
+    # The repo's user.name/email must apply: an exported git identity (as when
+    # committing as the owner) would override it and break author assertions
+    env = {k: v for k, v in os.environ.items()
+           if k not in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "GIT_COMMITTER_EMAIL")}
     if date:
         env["GIT_AUTHOR_DATE"] = env["GIT_COMMITTER_DATE"] = date
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True, text=True, env=env)
@@ -168,3 +171,26 @@ class TestNotes:
         note = _scan(scanner, repo)["2026-01-01-a"][scanner.KEY_ROW_NOTES][config.ISSUE_OUTDATED]
         assert note == ('English updated 2026-03-01 by optimizer-agent ("Optimized Blog Posts"); '
                         "translations from 2026-01-02")
+
+
+class TestFixAcrossSomeLanguages:
+    def test_untouched_translations_still_outdated_with_note(self, scanner, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        for args in (["init", "-q"], ["config", "user.name", "Shoaib Khan"],
+                     ["config", "user.email", "s@example.com"]):
+            _git(repo, *args)
+        d = _post(repo, "2026-01-01-a", {"index.md": EN.format(slug="a")})
+        _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "publish", date="2026-01-01T00:00:00+00:00")
+        _post(repo, "2026-01-01-a", {"index.de.md": "de", "index.fr.md": "fr"})
+        _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "translate", date="2026-01-02T00:00:00+00:00")
+        # Fix in English and German only; French was fine
+        (d / "index.md").write_text(EN.format(slug="a") + "Shorter.\n", encoding="utf-8")
+        (d / "index.de.md").write_text("de shorter", encoding="utf-8")
+        _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "Shorten descriptions",
+                                      date="2026-03-01T00:00:00+00:00")
+
+        r = _scan(scanner, repo)["2026-01-01-a"]
+        assert r[scanner.KEY_OUTDATED_FILES] == ["fr"]          # still retranslated
+        assert r[scanner.KEY_ROW_NOTES][config.ISSUE_OUTDATED].endswith(
+            "translations from 2026-01-02; same commit changed 1 of 2 translations")

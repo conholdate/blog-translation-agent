@@ -20,7 +20,7 @@ from git_repo_utils import clone_or_pull_repos
 from io_google_spreadsheet import write_to_google_spreadsheet, write_domain_scan_results, update_history_tab, get_history_first_seen
 from translation_files_managers import delete_translation_files
 from translator import start_translation
-from scan_helpers import (read_post_meta, last_commits, outdated_langs,
+from scan_helpers import (read_post_meta, git_history, outdated_langs,
                           missing_note, extra_note, outdated_note)
 
 # Result keys used only inside this scanner
@@ -403,7 +403,7 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
     invalid_blog_dirs = []
     supported_langs = [l for l in valid_extensions.split("|") if l]
 
-    commits = last_commits(base_path)
+    commits, files_by_sha = git_history(base_path)
     commit_times = {path: c.time for path, c in commits.items()} if commits else None
     if commit_times is None:
         print(f"\n⚠️  No git history for {base_path} — OUTDATED check skipped.")
@@ -450,7 +450,9 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
                 if excessive_ext:
                     notes[config.ISSUE_EXTRA] = extra_note()
                 if outdated:
-                    notes[config.ISSUE_OUTDATED] = outdated_note(commits, post_rel_dir, outdated)
+                    notes[config.ISSUE_OUTDATED] = outdated_note(commits, post_rel_dir, outdated,
+                                                                 files_by_sha=files_by_sha,
+                                                                 present_langs=present_langs)
                 invalid_blog_dirs.append({
                     config.KEY_PRODUCT_NAME    : product_name,
                     config.KEY_DIR_BASE        : blog_dir,
