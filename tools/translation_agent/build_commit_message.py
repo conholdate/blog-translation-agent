@@ -115,7 +115,55 @@ def group_by_post(file_paths: list) -> "dict[str, dict]":
     return groups
 
 
-def build_message(domain: str, file_paths: list) -> str:
+# git status letter -> change kind. Translations are added (new post or
+# language), modified (OUTDATED row: retranslated after the English post
+# changed) or deleted (EXTRA row: unsupported file removed).
+ADDED, UPDATED, REMOVED = "added", "updated", "removed"
+_STATUS_KIND = {"A": ADDED, "M": UPDATED, "D": REMOVED}
+
+# Title verb per set of change kinds; any other mix is "Update translations"
+_TITLE_VERB = {
+    frozenset({ADDED}):   "Translate articles",
+    frozenset({UPDATED}): "Retranslate articles",
+    frozenset({REMOVED}): "Remove extra translations",
+}
+_MIXED_VERB = "Update translations"
+
+
+def _kind(file_path: str, statuses: "dict | None") -> str:
+    """Change kind of a file; unknown or no status means added (the original behaviour)."""
+    return _STATUS_KIND.get((statuses or {}).get(file_path, "A")[:1], ADDED)
+
+
+def _post_sections(group: dict, domain: str, statuses: "dict | None") -> list:
+    """[(kind, sorted langs)] for one post, in added / updated / removed order."""
+    by_kind = {}
+    for file_path in group["files"]:
+        lang = _lang_from_filename(file_path)
+        langs = by_kind.setdefault(_kind(file_path, statuses), [])
+        if lang not in langs:
+            langs.append(lang)
+    return [(k, _sort_langs(by_kind[k], domain)) for k in (ADDED, UPDATED, REMOVED) if k in by_kind]
+
+
+def _verb(kinds) -> str:
+    return _TITLE_VERB.get(frozenset(kinds), _MIXED_VERB)
+
+
+def _section_heading(kind: str, langs: list, where: str = "") -> str:
+    noun = "language" if len(langs) == 1 else "languages"
+    if kind == UPDATED:
+        return f"Retranslated {len(langs)} {noun}{where} (English post was updated):"
+    if kind == REMOVED:
+        return f"Removed extra files in {len(langs)} {noun}{where}:"
+    return f"Added translations in {len(langs)} {noun}{where}:"
+
+
+def build_message(domain: str, file_paths: list, statuses: "dict | None" = None) -> str:
+    """
+    statuses maps a file path to its git status letter (A/M/D, as printed by
+    `git diff --cached --name-status`); files without one count as added.
+    """
     groups = group_by_post(file_paths)
 
     if not groups:
@@ -123,22 +171,33 @@ def build_message(domain: str, file_paths: list) -> str:
 
     if len(groups) == 1:
         ((post_dir, group),) = groups.items()
-        langs = _sort_langs(group["langs"], domain)
-        noun = "language" if len(langs) == 1 else "languages"
+        sections = _post_sections(group, domain, statuses)
         file_noun = "file" if len(group["files"]) == 1 else "files"
-        title_line = f'Translate articles for: "{group["title"]}" - ({len(group["files"])} {file_noun})'
-        body_lines = [f"Added translations in {len(langs)} {noun}:", ""]
-        body_lines += [f"- {_lang_label(c)}" for c in langs]
-        return title_line + "\n\n" + "\n".join(body_lines)
+        title_line = (f'{_verb(k for k, _ in sections)} for: "{group["title"]}"'
+                      f' - ({len(group["files"])} {file_noun})')
+        body_lines = []
+        for kind, langs in sections:
+            body_lines += [_section_heading(kind, langs), ""]
+            body_lines += [f"- {_lang_label(c)}" for c in langs]
+            body_lines.append("")
+        return title_line + "\n\n" + "\n".join(body_lines).rstrip()
 
-    title_line = f"Translate articles for {len(groups)} posts ({domain})"
-    body_lines = [f"Added translations across {len(groups)} posts:", ""]
+    all_sections = {post_dir: _post_sections(group, domain, statuses) for post_dir, group in groups.items()}
+    kinds = {k for sections in all_sections.values() for k, _ in sections}
+    title_line = f"{_verb(kinds)} for {len(groups)} posts ({domain})"
+    body_lines = []
+    if kinds == {ADDED}:
+        body_lines += [f"Added translations across {len(groups)} posts:", ""]
     for post_dir, group in groups.items():
-        langs = _sort_langs(group["langs"], domain)
-        noun = "language" if len(langs) == 1 else "languages"
-        body_lines.append(f'"{group["title"]}" — {len(langs)} {noun}:')
-        body_lines += [f"- {_lang_label(c)}" for c in langs]
-        body_lines.append("")
+        for kind, langs in all_sections[post_dir]:
+            noun = "language" if len(langs) == 1 else "languages"
+            if kinds == {ADDED}:
+                body_lines.append(f'"{group["title"]}" — {len(langs)} {noun}:')
+            else:
+                heading = _section_heading(kind, langs)
+                body_lines.append(f'"{group["title"]}" — {heading[0].lower()}{heading[1:]}')
+            body_lines += [f"- {_lang_label(c)}" for c in langs]
+            body_lines.append("")
     return title_line + "\n\n" + "\n".join(body_lines).rstrip()
 
 
