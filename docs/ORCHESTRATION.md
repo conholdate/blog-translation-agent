@@ -52,6 +52,15 @@ A post with several issues produces one row per issue.
   (blog.aspose.com 21, blog.aspose.cloud 4, blog.conholdate.cloud 1; blog.groupdocs.com 116), cheaper
   to retranslate than to review, and a full retranslation fixes other issues in the post too.
 - Translations not committed yet are never reported.
+- **Known blind spot (accepted 17 Nov 2026):** any commit that touches the translations (bulk
+  link-prefix edits such as 2024-05-23 "Internal links prefixes updated", the 2025-02-11
+  "Restructured category" move, tag fixes) resets their date and hides older English changes.
+  Ignored on purpose: in the checked example (`2022-04-12-extract-text-and-images-from-pdf-documents-using-java`,
+  blog.conholdate.com) the hidden English changes were 1–2 line link fixes ("Fixed Broken Links",
+  2023-12-13). Catching them would need rename tracking plus a size threshold on both sides
+  (`git log --numstat -M`), and would mostly queue link-fix churn against the 3-posts-per-run limit.
+  English changes made from now on are caught; old link problems belong to the 404-link sweep and
+  stale text to the quality pipeline.
 - Needs the blog repo's full history: `scan-missing-translations.yml` checks out with
   `fetch-depth: 0`. With no git history (e.g. the gitignored local test mirror
   `blog-checkedout-repo/`), the check is skipped with the warning
