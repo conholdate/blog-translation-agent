@@ -301,9 +301,10 @@ jobs:
           cd ${{ env.REPO_PATH }}
 
           # Sync with remote before committing — translation takes 10-30 min and the
-          # remote may have moved forward. Untracked translation files survive this safely.
+          # remote may have moved forward. New (untracked) translations survive this as-is;
+          # retranslated (modified) files are set aside and put back by --autostash.
           git fetch origin
-          git merge --ff-only origin/$DEFAULT_BRANCH
+          git merge --ff-only --autostash origin/$DEFAULT_BRANCH
 
           # Add all new or modified translation files to the staging area
           git add content/
