@@ -8,7 +8,7 @@ explicitly approves it in the current session (see "User-Approved Changes").
 This file is a living document: agents keep it updated with the standing instructions agreed in
 discussions with the user (see "Standing Instructions").
 
-Last updated: 2026-11-04
+Last updated: 2026-11-17
 Authority: Shoaib Khan
 
 ---
@@ -84,13 +84,17 @@ They **may** be changed when the user explicitly approves it in the current sess
 Blog Translation Agent
   Step 1 — Scan
     1. Walk blog-checkedout-repo/content/ (read-only)
-    2. Detect every post missing a translated version
-    3. Write results to Google Sheets
+    2. Detect per post (skipping drafts and folders without index.md):
+       MISSING → Translate (no index.{lang}.md), EXTRA → Delete (unsupported .md),
+       OUTDATED → Retranslate (index.md committed after index.{lang}.md — git history;
+       a fix committed to both together is not outdated; skipped without git history)
+    3. Write results to Google Sheets (OUTDATED rows last, most recent English edit first)
 
   Step 2 — Translate
     1. Read missing translations from the consolidated scan sheet (domain tab; falls back to the
        old per-domain sheet if unreadable). Rows are used as-is and in order — a post may be split
-       by hand over several rows (e.g. to translate 2 languages first)
+       by hand over several rows (e.g. to translate 2 languages first). MISSING rows run
+       before OUTDATED rows; OUTDATED rows overwrite the existing translation
     2. Checkout target blog repo (read-only except content/)
     3. Translate English index.md → index.{lang}.md
     4. Write translated file to blog-checkedout-repo/content/...

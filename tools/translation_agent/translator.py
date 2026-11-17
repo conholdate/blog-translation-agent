@@ -1039,14 +1039,16 @@ class TranslationOrchestrator:
             self.link_localizers[domain] = LinkLocalizer(domain, f"blog-checkedout-repo/content/{blog_main_repo}")
         return self.link_localizers[domain]
 
-    def log_post_comment(self, domain: str, slug: str, comment, run_langs: List[str] = None):
+    def log_post_comment(self, domain: str, slug: str, comment, run_langs: List[str] = None,
+                         issue: str = config.ISSUE_MISSING):
         """
         Print the per-post comment; in production also append it to the history tab.
 
         comment is either a string (whole-post comment, written to every open
         history row of the post) or comment_for(row_langs) -> str, which builds
         each row's comment for just the languages that row tracks (see
-        append_history_comments); run_langs are the languages this run handled.
+        append_history_comments); run_langs are the languages this run handled;
+        issue picks which of the post's history rows (MISSING / OUTDATED) get it.
         """
         comment_for = comment if callable(comment) else (lambda row_langs: comment)
         detail(f"\n📝 History comment for {slug}:\n{comment_for(None)}\n")
@@ -1054,7 +1056,8 @@ class TranslationOrchestrator:
             return "history: local run, not written"   # never write into the production history tab
         try:
             written = append_history_comments(domain, slug, comment_for,
-                                              run_langs=run_langs if callable(comment) else None)
+                                              run_langs=run_langs if callable(comment) else None,
+                                              issue=issue)
             return "history ✓" if written else "history: not written"
         except Exception as e:
             print(f"⚠️  Could not log history comment for {slug}: {e}")
@@ -1120,8 +1123,11 @@ class TranslationOrchestrator:
                 post_author = item[4]
                 missed_langs = discovery_list = [x.strip() for x in item[7].split(',')]
                 langs = [l for l in missed_langs if l]
+                retranslate = is_outdated_row(item)
+                issue = item[5] if len(item) > 5 else config.ISSUE_MISSING
 
-                info(f"\n━━━ [{post_no}/{n_posts}] {product}/{slug}  ·  {post_author}")
+                info(f"\n━━━ [{post_no}/{n_posts}] {product}/{slug}  ·  {post_author}"
+                     + ("  ·  RETRANSLATE (outdated)" if retranslate else ""))
                 info(f"    Target ({len(langs)}): {', '.join(langs)}")
                 detail(f"    Row: {item}")
 
@@ -1149,7 +1155,7 @@ class TranslationOrchestrator:
                 # Draft posts aren't final yet and won't be re-synced into existing
                 # translations once published, so skip translating them altogether.
                 if frontmatter.get('draft') is True:
-                    history = self.log_post_comment(domain, slug, build_history_comment(draft=True))
+                    history = self.log_post_comment(domain, slug, build_history_comment(draft=True), issue=issue)
                     info(f"    Result: {result_head(draft=True)} (source index.md is draft: true) · {history}")
                     run_results["⏭️"] += 1
                     continue
@@ -1164,9 +1170,10 @@ class TranslationOrchestrator:
                     try:
                         missed_lang = missed_lang.strip()
 
-                        # if input_path/index.{missed_lang}.md exists, skip
+                        # if input_path/index.{missed_lang}.md exists, skip —
+                        # unless the row is OUTDATED, which overwrites it
                         output_file_path = f"{input_path}/index.{missed_lang}.md"
-                        if Path(output_file_path).exists() or not missed_lang:
+                        if not missed_lang or (Path(output_file_path).exists() and not retranslate):
                             if missed_lang:
                                 info(f"    ⏭️ {missed_lang:<8} already exists")
                             items_skipped += 1
@@ -1257,7 +1264,7 @@ class TranslationOrchestrator:
                         lang_order   = langs,
                     )
 
-                history = self.log_post_comment(domain, slug, comment_for, run_langs=langs)
+                history = self.log_post_comment(domain, slug, comment_for, run_langs=langs, issue=issue)
                 head = result_head(len(langs), success_list, skipped_list, failed)
                 info(f"    Result: {head} · {fmt_duration(end_time - start_time)}"
                      f" · {fmt_tokens(self.token_tracker.total_tokens)} tokens · {history}")
@@ -1274,7 +1281,9 @@ class TranslationOrchestrator:
                     traceback.print_exc()
                 history = ""
                 if len(item) > 2:
-                    history = " · " + self.log_post_comment(item[0], item[2], build_history_comment(error=error))
+                    history = " · " + self.log_post_comment(
+                        item[0], item[2], build_history_comment(error=error),
+                        issue=item[5] if len(item) > 5 else config.ISSUE_MISSING)
                 info(f"    Result: {result_head(error=error)}{history}")
                 info("    ⏭️  Skipping to the next post...")
                 run_results["❌"] += 1
@@ -1498,14 +1507,31 @@ def build_parser():
 # ROW VALIDATION HELPER
 # ============================================================================
 
+TRANSLATION_ISSUES = (config.ISSUE_MISSING, config.ISSUE_OUTDATED)
+
+
+def is_outdated_row(row: List[Any]) -> bool:
+    """OUTDATED rows retranslate (overwrite) existing files instead of adding missing ones."""
+    return len(row) > 5 and row[5] == config.ISSUE_OUTDATED
+
+
+def missing_first(posts_list: List[List[Any]]) -> List[List[Any]]:
+    """
+    MISSING rows before OUTDATED rows, each group keeping its sheet order, so new
+    posts never wait behind the retranslation backlog.
+    """
+    return ([r for r in posts_list if not is_outdated_row(r)] +
+            [r for r in posts_list if is_outdated_row(r)])
+
+
 def filter_valid_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
     """
     Return only rows that contain the required fields for translation:
       col 0 — domain
       col 1 — product
       col 2 — slug
-      col 5 — issue (must be MISSING — EXTRA rows are for deletion, not translation)
-      col 7 — missing languages
+      col 5 — issue (MISSING or OUTDATED — EXTRA rows are for deletion, not translation)
+      col 7 — languages to translate (missing) or retranslate (outdated)
 
     Filters out sentinel rows (e.g. '!!! NO MISSING TRANSLATION FOUND !!!'),
     blank rows, EXTRA-issue rows, and any row with fewer than 8 columns.
@@ -1518,7 +1544,7 @@ def filter_valid_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
         and str(row[0]).strip()             # domain
         and str(row[1]).strip()             # product
         and str(row[2]).strip()             # slug
-        and row[5] == config.ISSUE_MISSING  # only translation-issue rows
+        and row[5] in TRANSLATION_ISSUES    # only translation-issue rows
         and str(row[7]).strip()             # missing langs
     ]
 
@@ -1561,10 +1587,15 @@ def drop_existing_translations(posts_list: List[List[Any]],
         (col 6, the count, is updated to match);
       - rows with no language left are returned separately as already translated.
 
+    OUTDATED rows are passed through unchanged: their files exist by definition.
+
     Returns (rows_still_to_translate, rows_already_translated).
     """
     remaining, done = [], []
     for row in posts_list:
+        if is_outdated_row(row):
+            remaining.append(row)
+            continue
         repo = TranslationConfig.domain_map.get(str(row[0]).strip())
         if not repo:
             remaining.append(row)       # unknown domain: let translate_files report it
@@ -1652,7 +1683,7 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
         extra_rows = filter_extra_rows(raw_posts_list) if raw_posts_list else []
 
         if not posts_list and not extra_rows:
-            info(f"    Nothing to do: no missing translations or extra files for {currentDomain}.")
+            info(f"    Nothing to do: no missing/outdated translations or extra files for {currentDomain}.")
             return
 
         # PRINTING POSTS LIST ==========================
@@ -1688,6 +1719,10 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
             for row in already_done:
                 detail(f"      already translated: {row[1]}/{row[2]}")
 
+        # New posts (MISSING) before retranslations (OUTDATED)
+        if posts_list:
+            posts_list = missing_first(posts_list)
+
         # ======================
         # FILTER by LIMIT
         # ======================
@@ -1711,7 +1746,8 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
                 info(f"    Queue: {len(posts_list)} post(s){skipped_note}")
                 for no, post in enumerate(posts_list, 1):
                     n_langs = len([l for l in post[7].split(',') if l.strip()])
-                    info(f"      {no}. {post[1]}/{post[2]} · {post[4]} · {n_langs} langs")
+                    info(f"      {no}. {post[1]}/{post[2]} · {post[4]} · {n_langs} langs"
+                         + (" · retranslate" if is_outdated_row(post) else ""))
 
                 metrics = orchestrator.translate_files(currentDomain, target_author, translation_limit, posts_list)
 
