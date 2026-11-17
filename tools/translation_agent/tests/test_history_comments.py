@@ -102,7 +102,8 @@ class FakeWorksheet:
             self.update_cell(row, col, u["values"][0][0])
 
 
-OLD_HEADER = gs.HISTORY_HEADERS[:-1]      # tab created before 'Comments' existed
+OLD_HEADER = gs.HISTORY_HEADERS[:-2]      # tab created before 'Comments' and 'Notes' existed
+COMMENTS_HEADER = gs.HISTORY_HEADERS[:-1]  # tab created before 'Notes' existed
 
 
 def _hist_row(slug, status="pending", comment=None, langs="de"):
@@ -115,8 +116,14 @@ class TestEnsureHistoryColumns:
     def test_adds_comments_column_and_widens_grid(self):
         ws = FakeWorksheet([OLD_HEADER], col_count=11)
         gs._ensure_history_columns(ws)
-        assert ws.rows[0][-1] == "Comments"
-        assert ws.col_count == 12
+        assert ws.rows[0][-2:] == ["Comments", "Notes"]
+        assert ws.col_count == 13
+
+    def test_adds_notes_column_after_comments(self):
+        ws = FakeWorksheet([COMMENTS_HEADER], col_count=12)
+        gs._ensure_history_columns(ws)
+        assert ws.rows[0] == gs.HISTORY_HEADERS
+        assert ws.col_count == 13
 
     def test_noop_when_present(self):
         ws = FakeWorksheet([gs.HISTORY_HEADERS])

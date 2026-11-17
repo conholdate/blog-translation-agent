@@ -20,11 +20,13 @@ from git_repo_utils import clone_or_pull_repos
 from io_google_spreadsheet import write_to_google_spreadsheet, write_domain_scan_results, update_history_tab, get_history_first_seen
 from translation_files_managers import delete_translation_files
 from translator import start_translation
-from scan_helpers import read_post_meta, last_commit_times, outdated_langs
+from scan_helpers import (read_post_meta, last_commits, outdated_langs,
+                          missing_note, extra_note, outdated_note)
 
 # Result keys used only inside this scanner
 KEY_OUTDATED_FILES      = "outdated_files"
 KEY_SOURCE_COMMIT_TIME  = "source_commit_time"
+KEY_ROW_NOTES           = "row_notes"       # {issue: Notes text}
 
 # =====================================================================
 # Parse command-line arguments
@@ -232,6 +234,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                             ", ".join(item[config.KEY_MISSING_FILES]),  # Convert list to string
                             config.ACTION_TRANSLATE,
                             "",  # Status column, can be filled manually later
+                            item[KEY_ROW_NOTES].get(config.ISSUE_MISSING, ""),
                         ])
 
                     if item[config.KEY_EXTRA_COUNT] > 0:
@@ -241,6 +244,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                             ", ".join(item[config.KEY_EXTRA_FILES]),  # Convert list to string
                             config.ACTION_DELETE,
                             "",  # Status column, can be filled manually later
+                            item[KEY_ROW_NOTES].get(config.ISSUE_EXTRA, ""),
                         ])
 
                     if item[KEY_OUTDATED_FILES]:
@@ -250,6 +254,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                             ", ".join(item[KEY_OUTDATED_FILES]),
                             config.ACTION_RETRANSLATE,
                             "",  # Status column, can be filled manually later
+                            item[KEY_ROW_NOTES].get(config.ISSUE_OUTDATED, ""),
                         ]))
 
                     missing_translations_stats.items_discovered += item[config.KEY_MISSING_COUNT]
@@ -291,7 +296,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                 domain     = domain,
                 scan_date  = scan_date,
                 rows       = converted_result if result else [],
-                headers    = config.HEADERS_MISSING_TRANSLATIONS,
+                headers    = config.HEADERS_SCAN_RESULTS,
                 first_seen = get_history_first_seen(domain),
             )
 
@@ -303,9 +308,9 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
 
             for attempt in range(max_retries):
                 if config.PRODUCTION_ENV:
-                    sheet_link = write_to_google_spreadsheet(sheet_id, valid_extensions, config.HEADERS_MISSING_TRANSLATIONS, converted_result)
+                    sheet_link = write_to_google_spreadsheet(sheet_id, valid_extensions, config.HEADERS_SCAN_RESULTS, converted_result)
                 else:
-                    sheet_link = write_to_google_spreadsheet(config.SHEET_ID_TEST_QA, valid_extensions, config.HEADERS_MISSING_TRANSLATIONS, converted_result, f"{domain}-{current_date}")
+                    sheet_link = write_to_google_spreadsheet(config.SHEET_ID_TEST_QA, valid_extensions, config.HEADERS_SCAN_RESULTS, converted_result, f"{domain}-{current_date}")
 
                 if sheet_link:
                     print(f"✅ Scan results written to sheet.")
@@ -398,7 +403,8 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
     invalid_blog_dirs = []
     supported_langs = [l for l in valid_extensions.split("|") if l]
 
-    commit_times = last_commit_times(base_path)
+    commits = last_commits(base_path)
+    commit_times = {path: c.time for path, c in commits.items()} if commits else None
     if commit_times is None:
         print(f"\n⚠️  No git history for {base_path} — OUTDATED check skipped.")
 
@@ -436,7 +442,15 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
                              if commit_times else [])
 
             if missing_files or excessive_ext or outdated:
-                en_time = commit_times.get(f"{product_name}/{blog_dir}/index.md", 0) if commit_times else 0
+                post_rel_dir = f"{product_name}/{blog_dir}"
+                en_time = commit_times.get(f"{post_rel_dir}/index.md", 0) if commit_times else 0
+                notes = {}
+                if missing_files:
+                    notes[config.ISSUE_MISSING] = missing_note(len(missing_files), len(supported_langs))
+                if excessive_ext:
+                    notes[config.ISSUE_EXTRA] = extra_note()
+                if outdated:
+                    notes[config.ISSUE_OUTDATED] = outdated_note(commits, post_rel_dir, outdated)
                 invalid_blog_dirs.append({
                     config.KEY_PRODUCT_NAME    : product_name,
                     config.KEY_DIR_BASE        : blog_dir,
@@ -448,6 +462,7 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
                     config.KEY_EXTRA_COUNT     : len(excessive_ext),
                     KEY_OUTDATED_FILES         : outdated,
                     KEY_SOURCE_COMMIT_TIME     : en_time,
+                    KEY_ROW_NOTES              : notes,
                 })
     return invalid_blog_dirs
 

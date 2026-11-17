@@ -23,9 +23,10 @@ HISTORY_TAB             = "history"
 HISTORY_HEADERS         = [
     "Scan Date", "Domain", "Product", "Blog Post Directory",
     "Blog Post URL", "Author", "Issue", "Target Translations", "Count",
-    "Status", "Completed Date", "Comments",
+    "Status", "Completed Date", "Comments", "Notes",
 ]
-HISTORY_COMMENTS_HEADER  = "Comments"
+HISTORY_COMMENTS_HEADER  = "Comments"   # per-run translation results (Step 2)
+HISTORY_NOTES_HEADER     = "Notes"      # why the scanner flagged the row (refreshed every scan)
 HISTORY_COMMENT_MAX_LEN  = 45000    # Sheets cell limit is 50,000 chars
 HISTORY_STATUS_PENDING   = "pending"
 HISTORY_STATUS_PARTIAL   = "partial"
@@ -343,8 +344,9 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
     """
     Update the history tab with the latest scan results for a domain.
 
-    current_rows must match HEADERS_MISSING_TRANSLATIONS column order:
-    [domain, product, slug, url, author, issue, count, target_translations, action, status]
+    current_rows must match HEADERS_SCAN_RESULTS column order:
+    [domain, product, slug, url, author, issue, count, target_translations, action, status, notes]
+    (notes is optional).
 
     Tracked independently per (domain, slug, issue) — a post with both a
     MISSING and an EXTRA issue gets two history rows, each progressing on
@@ -356,6 +358,8 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
       - Post/issue gone from current scan   → Status = completed, Completed Date = scan_date
       - Post/issue present, fewer items     → Status = partial,   update Target Translations/Count
       - Post/issue present, same items      → no change
+    On every open row still flagged, Notes is refreshed with the scan's latest
+    reason (e.g. a newer English edit on an OUTDATED row).
 
     New (post, issue) pairs not yet in history → appended as pending.
     """
@@ -375,6 +379,10 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
         C_COUNT   = 8
         C_STATUS  = 9
         C_DONE    = 10
+        # Notes is found by name (added after Comments by _ensure_history_columns)
+        header    = all_rows[0] if all_rows else HISTORY_HEADERS
+        C_NOTES   = header.index(HISTORY_NOTES_HEADER) if HISTORY_NOTES_HEADER in header else 12
+        width     = max(len(HISTORY_HEADERS), len(header), C_NOTES + 1)
 
         # Build lookup from current scan keyed by (domain, slug, issue)
         # current_rows: [domain(0), product(1), slug(2), url(3), author(4), issue(5),
@@ -385,11 +393,20 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
             if len(r) >= 8 and r[0] and r[2]
         }
 
-        batch_updates = []
+        batch_updates = []     # columns A..K (Scan Date..Completed Date), USER_ENTERED
+        notes_updates = []     # Notes column, RAW
         seen_keys     = set()
+        # Comments (col L) is never rewritten here: it starts with "- " and
+        # USER_ENTERED would parse it as a formula (append_history_comments writes it RAW)
+        last_col = gspread.utils.rowcol_to_a1(1, C_DONE + 1)[:-1]       # "K"
+        notes_col = gspread.utils.rowcol_to_a1(1, C_NOTES + 1)[:-1]     # "M"
+
+        def _queue_row(sheet_row, row):
+            batch_updates.append({"range": f"A{sheet_row}:{last_col}{sheet_row}", "values": [row[:C_DONE + 1]]})
+            notes_updates.append({"range": f"{notes_col}{sheet_row}", "values": [[row[C_NOTES]]]})
 
         for i, row in enumerate(data_rows):
-            row = list(row) + [""] * (len(HISTORY_HEADERS) - len(row))  # pad short rows
+            row = list(row) + [""] * (width - len(row))  # pad short rows
 
             if row[C_DOMAIN] != domain:
                 continue
@@ -410,38 +427,45 @@ def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) ->
                 # Which of this row's items are still flagged?
                 remaining = hist_items & cur_items
 
+                cur_notes = str(cur[10]) if len(cur) > 10 else ""
+                notes_changed = bool(remaining) and cur_notes != row[C_NOTES]
+                row[C_NOTES] = cur_notes if remaining else row[C_NOTES]
+
                 if not remaining:
                     # All items in this row are now resolved
                     row[C_STATUS] = HISTORY_STATUS_COMPLETED
                     row[C_DONE]   = scan_date
-                    batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
+                    _queue_row(sheet_row, row)
                 elif remaining < hist_items:
                     # Some items in this row are still flagged
                     remaining_str = ", ".join(sorted(remaining))
                     row[C_LANGS]  = remaining_str
                     row[C_COUNT]  = str(len(remaining))
                     row[C_STATUS] = HISTORY_STATUS_PARTIAL
-                    batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
-                # else: remaining == hist_items → all still flagged, no change
+                    _queue_row(sheet_row, row)
+                elif notes_changed:
+                    # All items still flagged; only the reason changed
+                    _queue_row(sheet_row, row)
+                # else: remaining == hist_items, same reason → no change
             else:
                 # Post+issue is completely gone from the current scan
                 row[C_STATUS] = HISTORY_STATUS_COMPLETED
                 row[C_DONE]   = scan_date
-                batch_updates.append({"range": f"A{sheet_row}", "values": [row]})
+                _queue_row(sheet_row, row)
 
         if batch_updates:
             ws.batch_update(batch_updates, value_input_option="USER_ENTERED")
+            ws.batch_update(notes_updates, value_input_option="RAW")
 
         # Append rows for (post, issue) pairs not yet in history
-        new_rows = [
-            [
-                scan_date, r[0], r[1], r[2], r[3], r[4], r[5],
-                r[7], str(r[6]), HISTORY_STATUS_PENDING, "", "",
-            ]
-            for r in current_rows
-            if len(r) >= 8 and r[0] and r[2]
-            and (r[0], r[2], r[5]) not in seen_keys
-        ]
+        new_rows = []
+        for r in current_rows:
+            if len(r) >= 8 and r[0] and r[2] and (r[0], r[2], r[5]) not in seen_keys:
+                new = [scan_date, r[0], r[1], r[2], r[3], r[4], r[5],
+                       r[7], str(r[6]), HISTORY_STATUS_PENDING, ""]
+                new += [""] * (width - len(new))
+                new[C_NOTES] = str(r[10]) if len(r) > 10 else ""
+                new_rows.append(new)
 
         if new_rows:
             ws.append_rows(new_rows, value_input_option="USER_ENTERED")

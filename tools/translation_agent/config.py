@@ -182,6 +182,7 @@ KEY_EXTRA_FILES     = "Extra Files"  # internal dict key only, not its own sheet
 KEY_EXTRA_COUNT     = "Extra Files Count"  # internal dict key only, not its own sheet column
 KEY_ACTION          = "Action"
 KEY_STATUS          = "Status"
+KEY_NOTES           = "Notes"   # why the row was flagged (written by the scanner, not read back)
 
 # Issue / Action values ==========================
 ISSUE_MISSING       = "MISSING"
@@ -210,6 +211,10 @@ HEADERS_MISSING_TRANSLATIONS = [
     KEY_ACTION,
     KEY_STATUS
 ]
+
+# What the scanner writes: the columns above (which Step 2 reads, by name) plus
+# Notes. Step 2 doesn't need Notes, so tabs written before it existed still work.
+HEADERS_SCAN_RESULTS = HEADERS_MISSING_TRANSLATIONS + [KEY_NOTES]
 
 HEADERS_SUMMARY = [
     KEY_DATE,

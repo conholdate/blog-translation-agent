@@ -138,3 +138,33 @@ class TestOutdated:
         r = _scan(scanner, repo)["2026-01-01-a"]
         assert r[config.KEY_MISSING_FILES] == ["fr"]
         assert r[scanner.KEY_OUTDATED_FILES] == ["de"]
+
+
+class TestNotes:
+    def test_missing_and_extra_notes(self, scanner, tmp_path):
+        _post(tmp_path, "2026-01-01-new", {"index.md": EN.format(slug="new")})
+        _post(tmp_path, "2026-01-01-part", {"index.md": EN.format(slug="part"), "index.de.md": "x",
+                                            "index.xx.md": "junk"})
+        res = _scan(scanner, tmp_path)
+        assert res["2026-01-01-new"][scanner.KEY_ROW_NOTES] == {config.ISSUE_MISSING: "New post"}
+        notes = res["2026-01-01-part"][scanner.KEY_ROW_NOTES]
+        assert notes[config.ISSUE_MISSING] == "1 of 2 languages missing"
+        assert notes[config.ISSUE_EXTRA].startswith("Unsupported language file")
+
+    def test_outdated_note_names_the_english_commit(self, scanner, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        for args in (["init", "-q"], ["config", "user.name", "optimizer-agent"],
+                     ["config", "user.email", "o@example.com"]):
+            _git(repo, *args)
+        d = _post(repo, "2026-01-01-a", {"index.md": EN.format(slug="a")})
+        _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "publish", date="2026-01-01T00:00:00+00:00")
+        _post(repo, "2026-01-01-a", {"index.de.md": "de", "index.fr.md": "fr"})
+        _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "translate", date="2026-01-02T00:00:00+00:00")
+        (d / "index.md").write_text(EN.format(slug="a") + "More.\n", encoding="utf-8")
+        _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "Optimized Blog Posts",
+                                      date="2026-03-01T00:00:00+00:00")
+
+        note = _scan(scanner, repo)["2026-01-01-a"][scanner.KEY_ROW_NOTES][config.ISSUE_OUTDATED]
+        assert note == ('English updated 2026-03-01 by optimizer-agent ("Optimized Blog Posts"); '
+                        "translations from 2026-01-02")
