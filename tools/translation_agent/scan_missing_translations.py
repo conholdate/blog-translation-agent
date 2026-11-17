@@ -20,6 +20,11 @@ from git_repo_utils import clone_or_pull_repos
 from io_google_spreadsheet import write_to_google_spreadsheet, write_domain_scan_results, update_history_tab, get_history_first_seen
 from translation_files_managers import delete_translation_files
 from translator import start_translation
+from scan_helpers import read_post_meta, last_commit_times, outdated_langs
+
+# Result keys used only inside this scanner
+KEY_OUTDATED_FILES      = "outdated_files"
+KEY_SOURCE_COMMIT_TIME  = "source_commit_time"
 
 # =====================================================================
 # Parse command-line arguments
@@ -208,6 +213,8 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             handles_list = config.domains_data[domain][config.KEY_MENTIONS_AUTHOR]
 
             converted_result = []
+            outdated_rows    = []     # (index.md commit time, row) — sorted newest first below
+            missing_or_extra = 0      # posts with a MISSING/EXTRA issue (summary count)
             if result:
                 for item in result:
                     base_fields = [
@@ -236,22 +243,38 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                             "",  # Status column, can be filled manually later
                         ])
 
-                    person = item[config.KEY_AUTHOR].strip().lower()
-                    official_handle = config.DEV_NORMALIZED.get(person)  # safely get the handle
-                    # print(f"handle: {official_handle}")
+                    if item[KEY_OUTDATED_FILES]:
+                        outdated_rows.append((item[KEY_SOURCE_COMMIT_TIME], base_fields + [
+                            config.ISSUE_OUTDATED,
+                            len(item[KEY_OUTDATED_FILES]),
+                            ", ".join(item[KEY_OUTDATED_FILES]),
+                            config.ACTION_RETRANSLATE,
+                            "",  # Status column, can be filled manually later
+                        ]))
 
                     missing_translations_stats.items_discovered += item[config.KEY_MISSING_COUNT]
+
+                    # Authors are mentioned for missing/extra translations only —
+                    # an outdated translation (English edited later) isn't theirs to fix
+                    if not (item[config.KEY_MISSING_COUNT] or item[config.KEY_EXTRA_COUNT]):
+                        continue
+                    missing_or_extra += 1
+
+                    person = item[config.KEY_AUTHOR].strip().lower()
+                    official_handle = config.DEV_NORMALIZED.get(person) if person else None
 
                     if official_handle:
                         if official_handle not in handles_list:
                             handles_list.append(official_handle)
-                            # print(f"added: {official_handle}")
                     else:
-                        print(f"\n⚠️ Handle not found for: {person}")
+                        print(f"\n⚠️ Handle not found for: {person or '(no author in index.md)'}")
 
-                # --- Sorting Logic ---
-                # Sorts the list 'converted_result' in-place based on the element at index 2 (column C/3)
+                # MISSING/EXTRA rows by post folder (column C); OUTDATED rows after
+                # them, most recently edited English first — Step 2 works top-down.
                 converted_result.sort(key=lambda x: x[2])
+                outdated_rows.sort(key=lambda t: (-t[0], t[1][2]))
+                converted_result += [row for _, row in outdated_rows]
+                print(f"{len(outdated_rows)} outdated  >  ", end=' ', flush=True)
 
             else:
                 converted_result.append(["", "!!! NO MISSING TRANSLATION FOUND !!!"])
@@ -301,7 +324,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             handles_string = " ".join(handles_list)
             print(f"handles_string: {handles_string}\n")
 
-            domains_missing_file_info = [current_date, domain, len(result), handles_string, sheet_link, config.SEND_EMAIL_TRUE if result else config.SEND_EMAIL_FALSE]
+            domains_missing_file_info = [current_date, domain, missing_or_extra, handles_string, sheet_link, config.SEND_EMAIL_TRUE if missing_or_extra else config.SEND_EMAIL_FALSE]
             SUMMARY_DATA.append(domains_missing_file_info)
             # print(f"Summary > {domains_missing_file_info}")
             # =============== SAVE ==============
@@ -331,17 +354,13 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             if translation_limit:
                 args += ["--limit", str(translation_limit)]
 
-            if key:
+            if is_translate and not key:
+                # Scanning needs no LLM key; only --translate does
+                print("⚠️  --translate needs PROFESSIONALIZE_API_KEY — skipping translation ⚠️")
+            elif is_translate:
                 args += ["--key", key]
-            else:
-                print("⚠️  No PROFESSIONALIZE KEY AVAILABLE ⚠️")
-                print("⚠️  KEY IS REQUIRED FOR TRANSLATION ⚠️")
-                break
-
-            safe_args = ["***" if (i > 0 and args[i-1] == "--key") else a for i, a in enumerate(args)]
-            print(f"args: {safe_args}")
-            
-            if is_translate:
+                safe_args = ["***" if (i > 0 and args[i-1] == "--key") else a for i, a in enumerate(args)]
+                print(f"args: {safe_args}")
                 print(f"Translating Missing Files for: {domain}...")
                 print("✅ == AUTO TRANSLATION TEMPORARILY PAUSED == ✅")
                 # start_translation(args, posts_list_to_translate=converted_result)
@@ -367,104 +386,69 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
 # =========================================
 def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_valid_files_count):
     """
-    Validates blog directories for missing markdown files and extracts the author name from index.md.
+    Find posts with missing, extra or outdated translations.
 
-    Args:
-        base_path (str): The root path containing the blog directories.
-        valid_md_file_regex (re.Pattern): Compiled regex pattern for valid markdown file names.
-        total_valid_files_count (int): Total count of valid markdown files.
+    Skipped: folders without index.md (nothing to translate from), draft posts,
+    non-dated folders and discount posts. A translation is outdated when its
+    post's index.md was committed after it (git history of base_path; skipped
+    when base_path isn't a git checkout, e.g. the local test mirror).
 
-    Returns:
-        list: A list of dictionaries containing blog directory details with missing file information and author name.
+    Returns a list of dicts, one per post with at least one issue.
     """
     invalid_blog_dirs = []
-    # author_regex = re.compile(r'author:\s*"?([^"]+)"?')  # Matches author: "Name" or author: Name
-    author_regex    = re.compile(r"author:\s*['\"]?([^'\"]+)['\"]?")
-    url_regex       = re.compile(r"url:\s*['\"]?([^\s'\"]+)['\"]?")
-    draft_regex     = re.compile(r"^draft:\s*['\"]?true['\"]?\s*$", re.IGNORECASE)
+    supported_langs = [l for l in valid_extensions.split("|") if l]
+
+    commit_times = last_commit_times(base_path)
+    if commit_times is None:
+        print(f"\n⚠️  No git history for {base_path} — OUTDATED check skipped.")
 
     for product_name in os.listdir(base_path):
         product_path = os.path.join(base_path, product_name)
-        if os.path.isdir(product_path):
-            for blog_dir in os.listdir(product_path):
-                if blog_dir.startswith(("2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027")) and "discount" not in blog_dir:
-                    blog_dir_path = os.path.join(product_path, blog_dir)
-                    if os.path.isdir(blog_dir_path):
-                        md_files = {file for file in os.listdir(blog_dir_path) if file.endswith(".md")}
-                        valid_files = {file for file in md_files if valid_md_file_regex.match(file)}
+        if not os.path.isdir(product_path):
+            continue
+        for blog_dir in os.listdir(product_path):
+            if not blog_dir.startswith(("2020", "2021", "2022", "2023", "2024", "2025", "2026", "2027")) or "discount" in blog_dir:
+                continue
+            blog_dir_path = os.path.join(product_path, blog_dir)
+            index_md_path = os.path.join(blog_dir_path, "index.md")
+            # No English source: nothing can be translated from this folder
+            if not os.path.isdir(blog_dir_path) or not os.path.exists(index_md_path):
+                continue
 
-                        missing_count = total_valid_files_count - len(valid_files)
-                        missing_files = sorted(
-                            f"{lang}" if lang != "md" else "index.md"
-                            for lang in valid_extensions.split("|")
-                            if f"index.{lang}.md" not in valid_files and lang != "md" or "index.md" not in valid_files
-                        )
-                        
-                        excessive_files = md_files - valid_files
+            try:
+                meta = read_post_meta(index_md_path)
+            except (OSError, UnicodeDecodeError) as e:
+                print(f"❌❌ Could not read: {index_md_path} → {e}")
+                continue
 
-                        # if (excessive_files):
-                        #     print("DIR: " + blog_dir_path)
-                        #     print(f"excessive_files:\n{excessive_files}")
-                        # else:
-                        #     print("== NO EXTRA TRANSLATIONS == ")
+            # Skip draft posts entirely — draft: true means the source content
+            # isn't final yet and it won't be reflected in translations once set.
+            if meta["draft"]:
+                continue
 
-                        excessive_ext = [file_name.split('.')[1] for file_name in excessive_files]
+            md_files    = {file for file in os.listdir(blog_dir_path) if file.endswith(".md")}
+            valid_files = {file for file in md_files if valid_md_file_regex.match(file)}
 
+            missing_files = sorted(l for l in supported_langs if f"index.{l}.md" not in valid_files)
+            present_langs = [l for l in supported_langs if f"index.{l}.md" in valid_files]
+            excessive_ext = sorted(file_name.split('.')[1] for file_name in md_files - valid_files)
+            outdated      = (outdated_langs(commit_times, f"{product_name}/{blog_dir}", present_langs)
+                             if commit_times else [])
 
-                        # Extract author from index.md
-                        author_name = None
-                        url_link = None
-                        is_draft = False
-
-                        index_md_path = os.path.join(blog_dir_path, "index.md")
-
-                        # print(f"index_md_path: {index_md_path}")
-
-                        if os.path.exists(index_md_path):
-                            # print(f"path exists...")
-                            try:
-                                with open(index_md_path, "r", encoding="utf-8") as f:
-                                    for line in f:
-                                        # Search for draft flag if we haven't found it yet
-                                        if not is_draft and draft_regex.match(line.strip()):
-                                            is_draft = True
-
-                                        # Search for author if we haven't found it yet
-                                        if not author_name:
-                                            author_match = author_regex.search(line)
-                                            if author_match:
-                                                author_name = author_match.group(1).strip()
-
-                                        # Search for url if we haven't found it yet
-                                        if not url_link:
-                                            url_match = url_regex.search(line)
-                                            if url_match:
-                                                url_link = url_match.group(1).strip()
-
-                                        # Break ONLY when both have been found
-                                        if author_name and url_link:
-                                            break
-
-                            except UnicodeDecodeError as e:
-                                print(f"❌❌ UnicodeDecodeError while reading: {index_md_path} ❌❌")
-                                print(f"   → {e}")
-
-                        # Skip draft posts entirely — draft: true means the source content
-                        # isn't final yet and it won't be reflected in translations once set.
-                        if is_draft:
-                            continue
-
-                        if missing_count > 0 or excessive_files:
-                            invalid_blog_dirs.append({
-                                config.KEY_PRODUCT_NAME    : product_name,
-                                config.KEY_DIR_BASE        : blog_dir,
-                                config.KEY_POST_URL        : url_link,
-                                config.KEY_AUTHOR          : author_name.strip(),  # Add extracted author name
-                                config.KEY_MISSING_COUNT   : missing_count,
-                                config.KEY_MISSING_FILES   : missing_files,
-                                config.KEY_EXTRA_FILES     : sorted(excessive_ext) if len(excessive_ext) > 0 else "-",
-                                config.KEY_EXTRA_COUNT     : len(excessive_ext)
-                            })
+            if missing_files or excessive_ext or outdated:
+                en_time = commit_times.get(f"{product_name}/{blog_dir}/index.md", 0) if commit_times else 0
+                invalid_blog_dirs.append({
+                    config.KEY_PRODUCT_NAME    : product_name,
+                    config.KEY_DIR_BASE        : blog_dir,
+                    config.KEY_POST_URL        : meta["url"],
+                    config.KEY_AUTHOR          : meta["author"],
+                    config.KEY_MISSING_COUNT   : len(missing_files),
+                    config.KEY_MISSING_FILES   : missing_files,
+                    config.KEY_EXTRA_FILES     : excessive_ext if excessive_ext else "-",
+                    config.KEY_EXTRA_COUNT     : len(excessive_ext),
+                    KEY_OUTDATED_FILES         : outdated,
+                    KEY_SOURCE_COMMIT_TIME     : en_time,
+                })
     return invalid_blog_dirs
 
 # =========================================

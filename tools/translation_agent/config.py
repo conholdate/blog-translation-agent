@@ -186,8 +186,10 @@ KEY_STATUS          = "Status"
 # Issue / Action values ==========================
 ISSUE_MISSING       = "MISSING"
 ISSUE_EXTRA         = "EXTRA"
+ISSUE_OUTDATED      = "OUTDATED"    # index.md committed after the translation file
 ACTION_TRANSLATE    = "Translate"
 ACTION_DELETE       = "Delete"
+ACTION_RETRANSLATE  = "Retranslate"
 
 # ===== HEADERS for SUMMARY SHEET ===============
 KEY_DATE                = "Date"
