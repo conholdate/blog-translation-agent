@@ -10,10 +10,10 @@ The agent runs a four-step pipeline:
 
 | Step | What it does |
 |------|-------------|
-| **1. Scan** | Walks all blog repositories daily, detects every post missing a translated version, and reports results to Google Sheets |
-| **2. Translate** | Reads the scan results and fills in missing translations using an LLM — preserving formatting, code blocks, and front matter |
+| **1. Scan** | Walks all blog repositories daily and reports to Google Sheets every post with a missing translation (`MISSING`), an unsupported extra file (`EXTRA`), or a translation older than its English `index.md` (`OUTDATED` — the English was committed after it), with a `Notes` column saying why |
+| **2. Translate** | Reads the scan results, fills in missing translations and retranslates outdated ones using an LLM — preserving formatting, code blocks, and front matter. New posts always go first |
 | **3. Quality Check** | Scores all existing translations for accuracy using a heuristic pass followed by AI analysis |
-| **4. Retranslate** | Automatically re-translates any post the AI validator flags for retranslation |
+| **4. Retranslate** | Re-translates files the AI validator flags `RETRANSLATE` — **not scheduled in any workflow yet** (see [ORCHESTRATION.md](docs/ORCHESTRATION.md#control-flow--step-4-retranslator)) |
 
 ---
 
@@ -44,6 +44,9 @@ blog-translation-agent/
 │   ├── translation_agent/          # Steps 1 & 2 — Scan + Translate
 │   │   ├── translator.py
 │   │   ├── scan_missing_translations.py
+│   │   ├── scan_helpers.py
+│   │   ├── build_commit_message.py
+│   │   ├── commit_translations.py
 │   │   ├── git_repo_utils.py
 │   │   ├── io_google_spreadsheet.py
 │   │   ├── utils.py
@@ -132,13 +135,13 @@ Run on a daily cron and can also be triggered manually via `workflow_dispatch`:
 
 | Workflow file | Domain | Schedule (UTC) | What it does |
 |---------------|--------|----------------|--------------|
-| `scan-missing-translations.yml` | All 6 domains | 00:00 daily | Scans all blog repos for missing translations and writes results to Google Sheets |
-| `translate-blog-aspose-com.yml` | blog.aspose.com | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
-| `translate-blog-aspose-cloud.yml` | blog.aspose.cloud | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
-| `translate-blog-groupdocs-com.yml` | blog.groupdocs.com | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
-| `translate-blog-groupdocs-cloud.yml` | blog.groupdocs.cloud | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
-| `translate-blog-conholdate-com.yml` | blog.conholdate.com | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
-| `translate-blog-conholdate-cloud.yml` | blog.conholdate.cloud | 01:00 daily | Auto-translates missing posts and commits to the blog repo |
+| `scan-missing-translations.yml` | All 6 domains | 00:00 daily | Scans all blog repos for missing, extra and outdated translations and writes results to Google Sheets |
+| `translate-blog-aspose-com.yml` | blog.aspose.com | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
+| `translate-blog-aspose-cloud.yml` | blog.aspose.cloud | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
+| `translate-blog-groupdocs-com.yml` | blog.groupdocs.com | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
+| `translate-blog-groupdocs-cloud.yml` | blog.groupdocs.cloud | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
+| `translate-blog-conholdate-com.yml` | blog.conholdate.com | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
+| `translate-blog-conholdate-cloud.yml` | blog.conholdate.cloud | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
 
 ### Release & alerts
 

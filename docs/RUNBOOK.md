@@ -30,8 +30,15 @@ Each domain has its own workflow, so re-running is isolated — trigger only the
 
 ### Check what happened
 1. **Actions logs** — step-level output for the run.
-2. **`history` tab** in the consolidated scan sheet — Status (`pending` / `partial` / `completed`) and Completed Date per domain.
+2. **`history` tab** in the consolidated scan sheet — Status (`pending` / `partial` / `completed`), Completed Date, **Comments** (Step 2's per-run result for the post) and **Notes** (why the scanner flagged it) per (post, issue). The domain tab shows the same Notes for today's rows.
 3. **Metrics endpoint** — run_id, durations, items succeeded/failed/skipped, LLM token & call counts emitted by `send_metrics`.
+
+### Outdated translations (OUTDATED / Retranslate)
+- The scanner flags a translation when the post's `index.md` was committed after it — usually the optimizer agent's "Optimized Blog Posts" commits. The Notes column names the English commit (date, author, subject) and the translations' dates.
+- Step 2 runs MISSING rows first, then OUTDATED rows newest English edit first, overwriting the existing files; commits are titled `Retranslate articles for: …`.
+- **Fixing something in English and all translations (URL, image)?** Commit them **together** — equal commit times are not outdated. An English-only commit makes every language OUTDATED and costs ~20 LLM translations per post.
+- **Skip a flagged post:** deleting its row from the domain tab only skips it until the next daily scan re-adds it; to settle it for good, commit the translations after the English change.
+- **Backlog:** 763 outdated posts on the 5 maintained blogs as of 17 Nov 2026 (see [ORCHESTRATION.md — Retranslation backlog](./ORCHESTRATION.md#retranslation-backlog-as-of-17-nov-2026)). Raise the run limit only within the 3-posts-per-run rule (AGENTS.md).
 
 ---
 
@@ -54,7 +61,7 @@ After rotation, trigger one `workflow_dispatch` run with a small `limit` to conf
 
 The agent only writes language variants (`index.{lang}.md`) — it never modifies the English source (`index.md`).
 
-- **Bad translation committed to a blog repo:** revert the specific file(s) in that repo (`git revert` / restore previous `index.{lang}.md`). The next quality-validator pass re-checks and the retranslator will re-fix if the AI Decision is still `RETRANSLATE`.
+- **Bad translation committed to a blog repo:** revert the specific file(s) in that repo (`git revert` / restore previous `index.{lang}.md`). Note a revert is a new commit on the translation — it won't be OUTDATED unless `index.md` changes again. The quality retranslator (`quality_retranslator.py`) is not run by any workflow, so for a re-fix add the post to the scan sheet by hand or run the translator for it.
 - **Corrupted batch:** identify the run via `run_id` in metrics / the `history` tab, then re-run only the affected domain/product with a `limit`.
 - **Sheet state wrong:** the per-domain scan tab is overwritten on each scan; re-running the scanner rebuilds it. The `history` tab is append-only — correct forward, do not delete rows.
 
@@ -70,6 +77,9 @@ The agent only writes language variants (`index.{lang}.md`) — it never modifie
 | Shortcode / code-fence corruption | LLM altered Hugo syntax | Covered by recent retry hardening; if seen, file an issue with the post slug and re-run. |
 | Sheet API quota / 429 | Rate limit | Re-run later; reduce `limit`. |
 | Metrics not recorded | Metrics endpoint/key issue | Non-blocking by design — fix `METRICS_*`, no pipeline impact. |
+| Scan log: `No git history for … — OUTDATED check skipped` | Blog repo checked out without history | Keep `fetch-depth: 0` in `scan-missing-translations.yml`. Locally expected (the test mirror has no history). |
+| Translate workflow fails at `git merge --ff-only --autostash` with a stash conflict | Someone pushed a change to the same translation file the run retranslated | Re-run the post; the retranslation will start from the new remote version. |
+| Scan sheet `Comments` cells show `#ERROR!` | A Comments cell was written `USER_ENTERED` (parsed as a formula) | Code writes Comments `RAW` only (`append_history_comments`); `update_history_tab` no longer rewrites them (fixed 17 Nov 2026). Fix old cells by hand. |
 
 ---
 

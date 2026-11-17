@@ -88,7 +88,8 @@ Blog Translation Agent
        MISSING → Translate (no index.{lang}.md), EXTRA → Delete (unsupported .md),
        OUTDATED → Retranslate (index.md committed after index.{lang}.md — git history;
        a fix committed to both together is not outdated; skipped without git history)
-    3. Write results to Google Sheets (OUTDATED rows last, most recent English edit first)
+    3. Write results to Google Sheets (OUTDATED rows last, most recent English edit first), each
+       row with a Notes reason (e.g. which English commit made it OUTDATED)
 
   Step 2 — Translate
     1. Read missing translations from the consolidated scan sheet (domain tab; falls back to the
@@ -115,7 +116,7 @@ Blog Translation Agent
       2. Run AI-based Error% + RETRANSLATE/KEEP decision check on flagged files (read-only on files)
       3. Update Error% AI, AI Decision, and Analysed At cells in sheet
 
-  Step 4 — Retranslate
+  Step 4 — Retranslate (not run by any workflow, output never committed — as of 2026-11-17)
     1. Read quality sheet for files with AI Decision = RETRANSLATE
     2. Re-translate file via Step 2 pipeline
     3. Write corrected index.{lang}.md to blog-checkedout-repo/content/...
@@ -181,3 +182,5 @@ with the date, and update `Last updated` above.
 | 2026-10-29 | Commits to blog repos (only after approval) go to: **blog.aspose.com**, **blog.aspose.cloud**, **blog.groupdocs.cloud**, **blog.conholdate.com**, **blog.conholdate.cloud**. |
 | 2026-10-29 | **blog.groupdocs.com** is not maintained for translations: identify and report its issues, but do not translate for it or commit to its repo. |
 | 2026-11-04 | Do not run a full Hugo build of a blog repo (it takes hours). To verify a post, build only that post in a throwaway site in a temp folder. |
+| 2026-11-17 | Document everything — no information may be lost. Every behaviour change goes into the docs in the same piece of work: `docs/` (ORCHESTRATION, ARCHITECTURE, RUNBOOK, DATA_HANDLING, PIPELINE_MAP), both READMEs, `CHANGELOG.md` and this file, including findings, numbers and decisions with their reasons. Tests are updated or added with every change. |
+| 2026-11-17 | Split work into reasonable, self-contained commits (each passing the tests), still only after the user approves. |

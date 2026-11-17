@@ -8,6 +8,11 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `OUTDATED` / `Retranslate` scan rows: a translation is outdated when its post's `index.md` was committed after it (one `git log` pass per blog, `scan_helpers.last_commits()` / `outdated_langs()`; a fix committed to `index.md` and its translations together is not outdated; skipped with a warning when there is no git history). OUTDATED rows are listed after MISSING/EXTRA rows, most recent English edit first. Found 17 Nov 2026: 763 outdated posts on the 5 maintained blogs, mostly optimizer-agent edits
+- Step 2 retranslates OUTDATED rows: they pass `filter_valid_rows()`, always run after MISSING rows (`missing_first()`), overwrite the existing `index.{lang}.md`, and log history comments on the OUTDATED history row
+- `Notes` column (domain tab, old per-domain sheet, `history` tab) saying why a row was flagged: `New post` / `N of M languages missing` / `Unsupported language file(s)…` / `English updated <date> by <author> ("<subject>"); translations from <date>`. Refreshed on open history rows each scan. Step 2 reads columns by name and ignores it (`HEADERS_SCAN_RESULTS` = `HEADERS_MISSING_TRANSLATIONS` + `Notes`)
+- Commit messages follow each staged file's git status: `Retranslate articles for: …` (modified), `Remove extra translations for: …` (deleted), `Update translations for: …` (mixed); added files keep `Translate articles for: …`
+- `tools/translation_agent/scan_helpers.py` and tests: `test_scan_helpers.py`, `test_scan_missing_translations.py`, `test_outdated_rows.py`, `test_commit_message_kinds.py`, `test_history_scan_updates.py` (first tests for `update_history_tab`)
 - Translated `title`, `seoTitle` and `description` are kept within search-result length (70 / 70 / 170 display width, East Asian characters count 2, the Health and Recovery audit's rule): a longer translation is shortened by a second LLM call that keeps product names (`TranslationConfig.length_limits`, `FrontmatterTranslatorAgent._fit_length`). Found 12 Nov 2026: the Java merge post's new translations had titles up to 82 and descriptions up to 197 wide
 - `Issue` (`MISSING`/`EXTRA`) and `Action` (`Translate`/`Delete`) columns in the scan sheet — each flagged post now produces separate MISSING and/or EXTRA rows instead of one ambiguous combined row, so the sheet is directly actionable
 - `TranslationOrchestrator.delete_extra_files()` / `filter_extra_rows()` in `translator.py` — deletes junk/extra files flagged by `EXTRA`-issue scan rows (reconstructed as `index.<fragment>.md`), using the same `git add content/` → commit → push mechanism as translations
@@ -17,6 +22,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `docs/PIPELINE_MAP.html` — visual pipeline map
 
 ### Changed
+- Scanner reads only the `index.md` front matter, with `utf-8-sig`; skips folders without `index.md`; author handles and the summary count/email cover MISSING/EXTRA posts only
+- Scanner needs `PROFESSIONALIZE_API_KEY` only with `--translate`
+- Translate workflows sync with `git merge --ff-only --autostash`, so retranslated (modified, tracked) files survive a remote change during the run
 - Posts with `draft: true` in `index.md` front matter are excluded from the missing-translations scan and skipped by the translator, since draft content isn't final and won't be re-synced into existing translations once published
 - Missing-translations sheet headers renamed: `Missing Count` → `Count`, `Missing Translations` → `Target Translations`, `Extra Translations` → `Action`
 - History tab tracking now keyed on `(domain, slug, issue)` instead of `(domain, slug)`, so `MISSING` and `EXTRA` lifecycles for the same post progress independently
@@ -26,6 +34,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Translation commits across all 7 workflows (`.github/workflows/translate-blog-*.yml`, `translate-blogs.yml`) are now authored/committed as `shoaibkhan-aspose <shoaib.khan@aspose.com>` instead of a generic bot identity; removed the dead `git config --global user.name/email` lines that were silently overridden by the `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env vars and never took effect
 
 ### Fixed
+- Scanner: a `draft: true` listed after `author`/`url` was missed; a post without `author` crashed the scan; a missing API key stopped the scan after the first domain; an orphan folder (translations, no `index.md`) was queued as MISSING for every language
+- `update_history_tab()` rewrote whole history rows `USER_ENTERED`, including Comments cells that start with `- ` and could turn into formulas; it now writes Scan Date…Completed Date and Notes (`RAW`) only
 - Pre-existing bug where the LLM-exception fallback in `quality_validator.py` nested a tuple instead of unpacking it
 - Positional column reads in `translator.py` and `update_history_tab()` that shifted by one due to the inserted `Issue` column
 

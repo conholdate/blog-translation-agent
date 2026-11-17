@@ -282,8 +282,8 @@
     <h1>Blog Translation Pipeline</h1>
     <p class="dek">
       One agent, four sequential steps, split across two directories:
-      <code>tools/translation_agent/</code> scans blog repositories and fills in missing-language
-      posts with an LLM; <code>tools/quality_agent/</code> audits every translation already on disk
+      <code>tools/translation_agent/</code> scans blog repositories for missing, extra and outdated
+      translations, fills in missing-language posts and retranslates outdated ones with an LLM; <code>tools/quality_agent/</code> audits every translation already on disk
       and force-retranslates the ones an LLM judges unusable. The two pipelines never call each
       other directly &mdash; they hand off through Google Sheets and the shared Git repositories.
     </p>
@@ -490,7 +490,7 @@
 
         <!-- section divider -->
         <line x1="20" y1="130" x2="1060" y2="130" style="stroke:var(--line)" stroke-width="1.4"/>
-        <text x="540" y="122" text-anchor="middle" class="t-mono" font-size="11" letter-spacing="1.5" style="fill:var(--accent)">FOR EACH MISSING LANGUAGE &mdash; translate_file()</text>
+        <text x="540" y="122" text-anchor="middle" class="t-mono" font-size="11" letter-spacing="1.5" style="fill:var(--accent)">FOR EACH LANGUAGE IN THE ROW &mdash; translate_file()</text>
         <text x="60" y="30" class="t-mono" font-size="11" letter-spacing="1.5" style="fill:var(--ink-soft)">ONCE PER POST</text>
 
         <!-- connectors -->
@@ -702,15 +702,17 @@
           <tr><th>Stage</th><th>File</th><th>Responsibility</th></tr>
         </thead>
         <tbody>
-          <tr><td class="stage" style="--stage-color:var(--accent)">Step 1</td><td class="file">scan_missing_translations.py</td><td class="desc">Walks the 6 blog repos, finds missing <code>index.{lang}.md</code> files, writes the scan &amp; history sheets.</td></tr>
-          <tr><td class="stage" style="--stage-color:var(--accent)">Step 2</td><td class="file">translator.py</td><td class="desc"><code>TranslationOrchestrator</code> plus the Frontmatter, Content, and Platform agents (Fig. 2).</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--accent)">Step 1</td><td class="file">scan_missing_translations.py</td><td class="desc">Walks the 6 blog repos; flags <code>MISSING</code> (no <code>index.{lang}.md</code>), <code>EXTRA</code> (unsupported file) and <code>OUTDATED</code> (<code>index.md</code> committed after the translation) with a Notes reason; writes the scan &amp; history sheets.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--accent)">Step 1</td><td class="file">scan_helpers.py</td><td class="desc">Front matter reading, one-pass <code>git log</code> of a blog's content, the OUTDATED rule and the Notes texts.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--accent)">Step 2</td><td class="file">translator.py</td><td class="desc"><code>TranslationOrchestrator</code> plus the Frontmatter, Content, and Platform agents (Fig. 2). MISSING rows first, then OUTDATED rows, which overwrite the existing file.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--sys-git)">Step 2</td><td class="file">commit_translations.py</td><td class="desc">One commit per post; <code>build_commit_message.py</code> words it by git status: Translate / Retranslate / Remove extra translations.</td></tr>
           <tr><td class="stage" style="--stage-color:var(--sys-git)">Step 1&ndash;2</td><td class="file">git_repo_utils.py</td><td class="desc">Clones or pulls the six blog repositories via a GitHub PAT.</td></tr>
           <tr><td class="stage" style="--stage-color:var(--sys-sheet)">Step 1&ndash;2</td><td class="file">io_google_spreadsheet.py</td><td class="desc">Reads and writes the scan sheet via a Google service account.</td></tr>
           <tr><td class="stage" style="--stage-color:var(--ink-soft)">Step 1&ndash;2</td><td class="file">utils.py</td><td class="desc">Posts job metrics to two Google Apps Script webhooks.</td></tr>
           <tr><td class="stage" style="--stage-color:var(--ink-soft)">Step 1&ndash;2</td><td class="file">config.py</td><td class="desc">Single source of truth for domains, languages, sheet IDs, and env-var secrets.</td></tr>
           <tr><td class="stage" style="--stage-color:var(--accent)">Step 3A</td><td class="file">quality_scanner.py</td><td class="desc">Heuristic word-overlap Error % per translated file, skipping code and shortcodes.</td></tr>
           <tr><td class="stage" style="--stage-color:var(--accent)">Step 3B</td><td class="file">quality_validator.py</td><td class="desc">AI Error % on a 20-paragraph sample; also returns the RETRANSLATE / KEEP decision and reason.</td></tr>
-          <tr><td class="stage" style="--stage-color:var(--accent)">Step 4</td><td class="file">quality_retranslator.py</td><td class="desc">Force-retranslates rows flagged RETRANSLATE via <code>TranslationOrchestrator</code>; sets Status = Fixed.</td></tr>
+          <tr><td class="stage" style="--stage-color:var(--accent)">Step 4</td><td class="file">quality_retranslator.py</td><td class="desc">Force-retranslates rows flagged RETRANSLATE via <code>TranslationOrchestrator</code>; sets Status = Fixed. <strong>Not run by any workflow; output never committed</strong> (as of 17 Nov 2026).</td></tr>
           <tr><td class="stage" style="--stage-color:var(--ink-soft)">Step 3&ndash;4</td><td class="file">lang_guard.py</td><td class="desc">Language-code normalization, validation, and RTL detection shared by the quality scripts.</td></tr>
         </tbody>
       </table>

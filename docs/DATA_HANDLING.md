@@ -9,9 +9,10 @@ Companion to [`ARCHITECTURE.md`](./ARCHITECTURE.md) and [`RUNBOOK.md`](./RUNBOOK
 |---|---|---|---|
 | Blog post Markdown (`index.md`, `index.{lang}.md`) | Public blog repos (Aspose/GroupDocs/Conholdate) | Public content | Translated variants written back to the same repos |
 | Scan / quality results | Computed from the above | Operational | Google Sheets (per-domain tabs + `history`) |
+| Git commit metadata of the blog repos (commit date, author name, subject) | Public blog repos' history | Public (already visible on GitHub) | Scan sheet `Notes` column for `OUTDATED` rows |
 | Run metrics (run_id, durations, counts, token usage) | Pipeline runtime | Operational, non-PII | Metrics REST endpoint (`METRICS_API_URL`) |
 
-**No personal data (PII) is processed.** The agent operates only on public blog content and its own operational metadata.
+**No personal data (PII) beyond public names is processed.** The agent operates on public blog content, its own operational metadata, and author names that are already public (post `author` front matter; git commit author names in OUTDATED Notes).
 
 ## Secrets — where they live
 

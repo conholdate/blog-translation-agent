@@ -40,14 +40,16 @@ One agent. Four pipeline steps. Two implementation directories.
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| Scanner | `scan_missing_translations.py` | Walks blog repos, finds missing `index.{lang}.md` files and extra/junk files (skipping posts where `index.md` has `draft: true`), classifies each into a `MISSING`/`EXTRA` `Issue` row with an `Action` (`Translate`/`Delete`), writes report to Google Sheets |
-| Orchestrator | `translator.py` — `TranslationOrchestrator` | Coordinates the translation workflow, manages agents and token tracking; also deletes junk files flagged by `EXTRA`-issue rows (`delete_extra_files()`) |
+| Scanner | `scan_missing_translations.py` | Walks blog repos (skipping drafts and folders without `index.md`), finds missing `index.{lang}.md` files, extra/junk files and translations whose `index.md` was committed after them; writes one row per (post, issue) — `MISSING`/`Translate`, `EXTRA`/`Delete`, `OUTDATED`/`Retranslate` — with a `Notes` reason to Google Sheets. See [ORCHESTRATION.md — Step 1](ORCHESTRATION.md#step-1--scan-consolidated-scan-sheet) |
+| Scan helpers | `scan_helpers.py` | Front matter reading (`utf-8-sig`, front matter block only), one-pass `git log` of a blog's content (`last_commits()`), the OUTDATED rule (`outdated_langs()`) and the Notes texts |
+| Orchestrator | `translator.py` — `TranslationOrchestrator` | Coordinates the translation workflow, manages agents and token tracking; translates `MISSING` rows and overwrites files for `OUTDATED` rows (MISSING rows always first); also deletes junk files flagged by `EXTRA`-issue rows (`delete_extra_files()`) |
 | Frontmatter Agent | `translator.py` — `FrontmatterTranslatorAgent` | Translates YAML front matter; protects product names, updates URL with lang prefix |
 | Content Agent | `translator.py` — `ContentTranslatorAgent` | Translates Markdown body in chunks; preserves code blocks and shortcodes; 3-retry logic |
 | Platform Agent | `translator.py` — `PlatformIdentifierAgent` | Identifies the programming platform (.NET, Java, Python, …) to improve translation context |
 | Sheets I/O | `io_google_spreadsheet.py` | Reads/writes Google Sheets via service account credentials |
 | Git Utils | `git_repo_utils.py` | Clones or pulls the six blog repositories via GitHub PAT |
-| Commit Message Builder | `build_commit_message.py` | Builds a descriptive commit title/body from the actual staged files (post title + per-language list), used by all 7 translate workflows in place of a static message |
+| Commit Message Builder | `build_commit_message.py` | Builds a descriptive commit title/body from the staged files (post title + per-language list), worded by each file's git status: added → "Translate articles", modified → "Retranslate articles", deleted → "Remove extra translations", mixed → "Update translations" |
+| Per-post committer | `commit_translations.py` | Run by all 7 translate workflows after `git add content/`: reads `git diff --cached --name-status` and makes one commit per post with the message above |
 | Metrics | `utils.py` | POSTs job metrics to two Google Apps Script webhooks (team + prod) |
 | Config | `config.py` | Single source of truth for all constants and env-var-backed secrets |
 
@@ -57,7 +59,7 @@ One agent. Four pipeline steps. Two implementation directories.
 |-----------|------|----------------|
 | Scanner | `quality_scanner.py` | Step 3, Phase A — heuristic word-overlap Error% per translated file; writes one row per file to quality sheet |
 | Validator | `quality_validator.py` | Step 3, Phase B — AI-based Error% via LLM; samples 20 paragraphs; back-fills sheet |
-| Retranslator | `quality_retranslator.py` | Step 4 — force-retranslates files flagged `RETRANSLATE` by the AI validator via `TranslationOrchestrator` |
+| Retranslator | `quality_retranslator.py` | Step 4 — force-retranslates files flagged `RETRANSLATE` by the AI validator via `TranslationOrchestrator`. **Not wired to any workflow and its output is never committed** (found 17 Nov 2026) — production retranslation goes through Step 1 `OUTDATED` rows + Step 2 |
 | Language Guard | `lang_guard.py` | Language code normalization, validation, RTL detection, translation heuristics |
 
 ---
@@ -113,10 +115,12 @@ blog-translation-agent/
 ├── tools/
 │   ├── translation_agent/
 │   │   ├── translator.py                   # Orchestrator + 3 agents
-│   │   ├── scan_missing_translations.py    # Missing-translation scanner
+│   │   ├── scan_missing_translations.py    # Missing / extra / outdated-translation scanner
+│   │   ├── scan_helpers.py                 # Scanner helpers: front matter, git history, Notes
 │   │   ├── git_repo_utils.py               # Clone / pull blog repos
 │   │   ├── io_google_spreadsheet.py        # Google Sheets read/write
 │   │   ├── build_commit_message.py         # Descriptive git commit title/body
+│   │   ├── commit_translations.py          # One commit per post (used by translate workflows)
 │   │   ├── utils.py                        # Metrics (REST API)
 │   │   ├── config.py                       # All constants + env vars
 │   │   └── tests/
@@ -164,8 +168,8 @@ blog-translation-agent/
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `scan-missing-translations.yml` | Daily 00:00 UTC + manual | Runs scanner for all 6 domains |
-| `translate-blog-*.yml` (per domain) | Daily 01:00 UTC + manual | Translates and commits missing posts |
+| `scan-missing-translations.yml` | Daily 00:00 UTC + manual | Runs scanner for all 6 domains (blog repo checked out with full history for the OUTDATED check) |
+| `translate-blog-*.yml` (per domain) | Daily 01:00 UTC + manual | Translates missing posts and retranslates outdated ones (max 3 posts per run), syncs with `git merge --ff-only --autostash`, commits one commit per post |
 | `translate-blogs.yml` | Manual dispatch | Translates a chosen domain, product, author, and limit |
 
 **Release & alerts:**
