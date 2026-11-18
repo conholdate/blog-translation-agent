@@ -306,7 +306,8 @@ def build_history_comment(total: int = 0,
                           lang_order: List[str] = (),
                           error: str = None,
                           draft: bool = False,
-                          date: str = None) -> str:
+                          date: str = None,
+                          deferred: List[str] = ()) -> str:
     """
     Build the per-post comment for the queue row's Comments column (it moves
     to the history tab with the row once the row is closed), e.g.
@@ -317,26 +318,31 @@ def build_history_comment(total: int = 0,
         - EN links kept (translated URL would be 404): /total/foo/ [fr, ar, de +18]
     """
     date = date or time.strftime("%Y-%m-%d")
-    head = result_head(total, succeeded, skipped, failed, error, draft)
+    head = result_head(total, succeeded, skipped, failed, error, draft, deferred)
 
     lines = [f"- Date: {date}", f"- {head}"]
     if failed and not error:
         lines.append(f"- Failed: {', '.join(failed)}")
     if skipped:
         lines.append(f"- Already existed: {', '.join(skipped)}")
+    if deferred:
+        lines.append(f"- Not started (run time limit): {', '.join(deferred)}")
     if kept_english:
         lines.append(f"- EN links kept (translated URL would be 404): {format_kept_links(kept_english, lang_order)}")
     return "\n".join(lines)
 
 
 def result_head(total: int = 0, succeeded: List[str] = (), skipped: List[str] = (),
-                failed: List[str] = (), error: str = None, draft: bool = False) -> str:
-    """One-line post result, shared by the run log and the history comment."""
+                failed: List[str] = (), error: str = None, draft: bool = False,
+                deferred: List[str] = ()) -> str:
+    """One-line post result, shared by the run log and the queue comment."""
     done = len(succeeded) + len(skipped)
     if draft:
         return "⏭️ Skipped: draft"
     if error:
         return "❌ Failed: " + " ".join(str(error).split())[:200]
+    if deferred:
+        return f"⏸️ Time limit {done}/{total}"
     if skipped and not succeeded and not failed:
         return f"⏭️ Already translated ({len(skipped)}/{total} existed)"
     if failed and done == 0:
@@ -1041,7 +1047,8 @@ class TranslationOrchestrator:
             self.link_localizers[domain] = LinkLocalizer(domain, f"blog-checkedout-repo/content/{blog_main_repo}")
         return self.link_localizers[domain]
 
-    def log_post_comment(self, domain: str, slug: str, comment, run_langs: List[str] = None):
+    def log_post_comment(self, domain: str, slug: str, comment, run_langs: List[str] = None,
+                         done_langs: List[str] = None):
         """
         Print the per-post comment; in production also append it to the post's
         open queue rows (Comments column of the domain tab — it moves to the
@@ -1051,14 +1058,17 @@ class TranslationOrchestrator:
         -> str, which builds each row's comment for just the languages that row
         tracks (see append_queue_comments). run_langs are the languages this run
         handled: rows sharing one of them get the comment; a whole-post comment
-        without run_langs goes to every open row of the post.
+        without run_langs goes to every open row of the post. done_langs
+        (translated, or already there) are removed from every open row of the
+        post; rows left empty are closed and moved to history.
         """
         comment_for = comment if callable(comment) else (lambda row_langs: comment)
         detail(f"\n📝 Queue comment for {slug}:\n{comment_for(None)}\n")
         if not config.PRODUCTION_ENV:
             return "queue: local run, not written"   # never write into the production queue
         try:
-            written = append_queue_comments(domain, slug, comment_for, run_langs=run_langs)
+            written = append_queue_comments(domain, slug, comment_for, run_langs=run_langs,
+                                            done_langs=done_langs)
             return "queue ✓" if written else "queue: not written"
         except Exception as e:
             print(f"⚠️  Could not log queue comment for {slug}: {e}")
@@ -1082,7 +1092,14 @@ class TranslationOrchestrator:
                         currentDomain=None, 
                         target_author=None, 
                         translation_limit=None, 
-                        posts_list_to_translate: List[List[Any]]=None):
+                        posts_list_to_translate: List[List[Any]]=None,
+                        deadline: float = None):
+        """
+        Translate the queued rows in order. deadline (time.time() value): no new
+        language is started after it — the current post is logged with the rest
+        as 'Not started (run time limit)' and the remaining posts are left in the
+        queue untouched, so the workflow can still commit before GitHub's 6 h kill.
+        """
 
         missing_translations_stats = Stats(0, 0, 0, 0)
         total_start_time = time.time()
@@ -1093,8 +1110,12 @@ class TranslationOrchestrator:
         n_posts = len(posts_list_to_translate)
         run_results = Counter()      # post result emoji -> count
         run_tokens = 0
+        out_of_time = False
 
         for post_no, item in enumerate(posts_list_to_translate, 1):
+            if out_of_time:
+                info(f"\n⏸️  Run time limit reached — {n_posts - post_no + 1} post(s) left in the queue for the next run.")
+                break
 
             # Reset token tracker for each post so metrics are per-post
             self.token_tracker.reset()
@@ -1114,6 +1135,7 @@ class TranslationOrchestrator:
             failure_list = []
             success_list = []
             skipped_list = []
+            deferred = []
 
             try:
 
@@ -1124,10 +1146,10 @@ class TranslationOrchestrator:
                 post_author = item[4]
                 missed_langs = discovery_list = [x.strip() for x in item[7].split(',')]
                 langs = [l for l in missed_langs if l]
-                retranslate = is_outdated_row(item)
+                retranslate = is_retranslate_row(item)
 
                 info(f"\n━━━ [{post_no}/{n_posts}] {product}/{slug}  ·  {post_author}"
-                     + ("  ·  RETRANSLATE (outdated)" if retranslate else ""))
+                     + (f"  ·  RETRANSLATE ({item[5].lower()})" if retranslate else ""))
                 info(f"    Target ({len(langs)}): {', '.join(langs)}")
                 detail(f"    Row: {item}")
 
@@ -1166,9 +1188,14 @@ class TranslationOrchestrator:
                     detail(f"   🏷️  Identified Platform: {identified_platform}")
                 # ============================================================================
 
-                for missed_lang in missed_langs:
+                for lang_no, missed_lang in enumerate(missed_langs):
                     try:
                         missed_lang = missed_lang.strip()
+                        if deadline is not None and missed_lang and time.time() >= deadline:
+                            deferred = [l for l in langs if l in {x.strip() for x in missed_langs[lang_no:]}]
+                            out_of_time = True
+                            info(f"    ⏸️ run time limit reached — not starting: {', '.join(deferred)}")
+                            break
 
                         # if input_path/index.{missed_lang}.md exists, skip —
                         # unless the row is OUTDATED, which overwrites it
@@ -1246,13 +1273,14 @@ class TranslationOrchestrator:
                         llm_call_count          = self.token_tracker.total_calls,
                     )
 
-                failed = [l for l in langs if l not in success_list and l not in skipped_list]
+                failed = [l for l in langs if l not in success_list and l not in skipped_list
+                          and l not in deferred]
                 kept = self.get_link_localizer(domain).kept_english
                 if kept:
                     info(f"    🔗 EN links kept: {format_kept_links(kept, langs)}")
 
                 def comment_for(row_langs, langs=langs, failed=failed, kept=kept,
-                                success_list=success_list, skipped_list=skipped_list):
+                                success_list=success_list, skipped_list=skipped_list, deferred=deferred):
                     """Comment for one queue row, limited to the languages it tracks (None = all)."""
                     subset = set(row_langs) if row_langs is not None else set(langs)
                     return build_history_comment(
@@ -1262,10 +1290,12 @@ class TranslationOrchestrator:
                         failed       = [l for l in failed if l in subset],
                         kept_english = {p: ls & subset for p, ls in kept.items() if ls & subset},
                         lang_order   = langs,
+                        deferred     = [l for l in deferred if l in subset],
                     )
 
-                history = self.log_post_comment(domain, slug, comment_for, run_langs=langs)
-                head = result_head(len(langs), success_list, skipped_list, failed)
+                history = self.log_post_comment(domain, slug, comment_for, run_langs=langs,
+                                                done_langs=success_list + skipped_list)
+                head = result_head(len(langs), success_list, skipped_list, failed, deferred=deferred)
                 info(f"    Result: {head} · {fmt_duration(end_time - start_time)}"
                      f" · {fmt_tokens(self.token_tracker.total_tokens)} tokens · {history}")
                 run_results[head.split()[0]] += 1
@@ -1294,7 +1324,7 @@ class TranslationOrchestrator:
 
         s = missing_translations_stats
         info(f"\n═══ Run summary — {currentDomain} ({'PROD' if config.PRODUCTION_ENV else 'DEV'})")
-        info(f"    Posts: {n_posts} → " + "  ".join(f"{e} {run_results[e]}" for e in ("✅", "⚠️", "❌", "⏭️") if run_results[e]))
+        info(f"    Posts: {n_posts} → " + "  ".join(f"{e} {run_results[e]}" for e in ("✅", "⚠️", "⏸️", "❌", "⏭️") if run_results[e]))
         info(f"    Languages: {s.items_succeeded + s.items_skipped}/{s.items_discovered}"
              f" · {fmt_duration(time.time() - total_start_time)} · {fmt_tokens(run_tokens)} tokens")
 
@@ -1493,7 +1523,14 @@ def build_parser():
         "--limit",
         type=int,
         required=False,
-        help="LIMIT NUMBER OF POSTS to translate (optional)"
+        help="Run budget in POSTS' WORTH (optional): limit × the blog's language count translations, "
+             "taken from the queue in priority order; a post needing fewer languages uses less"
+    )
+    parser.add_argument(
+        "--time-limit",
+        type=int,
+        required=False,
+        help=f"Minutes after which no new language is started (default {config.TRANSLATION_TIME_LIMIT_MIN})"
     )
     parser.add_argument(
         "--verbose",
@@ -1507,12 +1544,64 @@ def build_parser():
 # ROW VALIDATION HELPER
 # ============================================================================
 
-TRANSLATION_ISSUES = (config.ISSUE_MISSING, config.ISSUE_OUTDATED)
+TRANSLATION_ISSUES = (config.ISSUE_MISSING, config.ISSUE_OUTDATED, config.ISSUE_ISSUE)
+RETRANSLATE_ISSUES = (config.ISSUE_OUTDATED, config.ISSUE_ISSUE)
 
 
 def is_outdated_row(row: List[Any]) -> bool:
-    """OUTDATED rows retranslate (overwrite) existing files instead of adding missing ones."""
+    """OUTDATED rows: the English post was committed after the translation."""
     return len(row) > 5 and row[5] == config.ISSUE_OUTDATED
+
+
+def is_retranslate_row(row: List[Any]) -> bool:
+    """OUTDATED and ISSUE rows retranslate (overwrite) existing files instead of adding missing ones."""
+    return len(row) > 5 and row[5] in RETRANSLATE_ISSUES
+
+
+def fill_issue_langs(posts_list: List[List[Any]], domain_langs: List[str]) -> List[List[Any]]:
+    """An ISSUE row with blank Target Translations means every language of the blog."""
+    out = []
+    for row in posts_list:
+        if len(row) > 7 and row[5] == config.ISSUE_ISSUE and not str(row[7]).strip():
+            row = list(row)
+            row[6], row[7] = str(len(domain_langs)), ", ".join(domain_langs)
+        out.append(row)
+    return out
+
+
+def language_budget(translation_limit: int, domain_langs: List[str]) -> int:
+    """
+    The run's budget in translations: --limit is "posts' worth", so a run can do
+    several posts that need only a few languages each (e.g. limit 3 on a
+    21-language blog = 63 translations: 3 full posts, or 5 posts × 12).
+    """
+    return translation_limit * len(domain_langs)
+
+
+def apply_language_budget(posts_list: List[List[Any]], budget: int) -> List[List[Any]]:
+    """
+    Take rows in order until the budget (number of translations) is used. A row
+    that doesn't fit is cut to the languages that do (the queue row keeps the
+    rest open); rows further down aren't pulled forward, which would break the
+    priority order. A language already taken for the same post by an earlier
+    row (e.g. OUTDATED and ISSUE both asking for fr) is translated once —
+    closing removes it from both rows.
+    """
+    out, seen, left = [], set(), budget
+    for row in posts_list:
+        if left <= 0:
+            break
+        key = (str(row[0]).strip(), str(row[1]).strip(), str(row[2]).strip())
+        langs = [l.strip() for l in str(row[7]).split(",") if l.strip() and key + (l.strip(),) not in seen]
+        if not langs:
+            continue
+        take = langs[:left]
+        seen.update(key + (l,) for l in take)
+        row = list(row)
+        row[6], row[7] = str(len(take)), ", ".join(take)
+        out.append(row)
+        left -= len(take)
+    return out
 
 
 def row_priority_rank(row: List[Any]) -> int:
@@ -1546,8 +1635,8 @@ def filter_valid_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
       col 0 — domain
       col 1 — product
       col 2 — slug
-      col 5 — issue (MISSING or OUTDATED — EXTRA rows are for deletion, not translation)
-      col 7 — languages to translate (missing) or retranslate (outdated)
+      col 5 — issue (MISSING, OUTDATED or ISSUE — EXTRA rows are for deletion, not translation)
+      col 7 — languages to translate (missing) or retranslate (outdated / issue)
 
     Filters out sentinel rows (e.g. '!!! NO MISSING TRANSLATION FOUND !!!'),
     blank rows, EXTRA-issue rows, and any row with fewer than 8 columns.
@@ -1603,13 +1692,13 @@ def drop_existing_translations(posts_list: List[List[Any]],
         (col 6, the count, is updated to match);
       - rows with no language left are returned separately as already translated.
 
-    OUTDATED rows are passed through unchanged: their files exist by definition.
+    OUTDATED and ISSUE rows are passed through unchanged: they overwrite existing files.
 
     Returns (rows_still_to_translate, rows_already_translated).
     """
     remaining, done = [], []
     for row in posts_list:
-        if is_outdated_row(row):
+        if is_retranslate_row(row):
             remaining.append(row)
             continue
         repo = TranslationConfig.domain_map.get(str(row[0]).strip())
@@ -1662,6 +1751,11 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
         target_product      = parsed.product.strip().lower() if parsed and parsed.product else None
         target_author       = parsed.author.strip().lower()  if parsed and parsed.author  else None
         translation_limit   = parsed.limit if parsed and parsed.limit is not None else config.domains_data[currentDomain][config.KEY_TRANSLATION_LIMIT]
+        time_limit_min      = (parsed.time_limit if parsed and getattr(parsed, "time_limit", None)
+                               else config.TRANSLATION_TIME_LIMIT_MIN)
+        deadline            = start_time + time_limit_min * 60
+        domain_langs        = [l for l in config.domains_data[currentDomain][config.KEY_SUPPORTED_LANGS].split("|") if l]
+        budget              = language_budget(translation_limit, domain_langs) if translation_limit else None
 
         posts_list = posts_list_to_translate or (parsed.posts_list if parsed else None)
 
@@ -1669,7 +1763,8 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
             set_verbose(True)
 
         info(f"═══ Translation run — {currentDomain} ({'PROD' if config.PRODUCTION_ENV else 'DEV'})")
-        info(f"    Filters: product={target_product or 'ALL'} · author={target_author or 'ALL'} · limit={translation_limit}")
+        info(f"    Filters: product={target_product or 'ALL'} · author={target_author or 'ALL'} · limit={translation_limit}"
+             + (f" posts' worth = {budget} translations" if budget else "") + f" · time limit {time_limit_min} min")
 
         if posts_list is None:
             # The consolidated scan sheet (domain tab) is the source, in DEV too —
@@ -1689,8 +1784,9 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
         raw_posts_list = posts_list
 
         # Keep only rows that have the required fields: domain, product, slug, and missing langs
+        # (an ISSUE row with blank languages means every language of the blog)
         if posts_list:
-            posts_list = filter_valid_rows(posts_list)
+            posts_list = filter_valid_rows(fill_issue_langs(posts_list, domain_langs))
 
         extra_rows = filter_extra_rows(raw_posts_list) if raw_posts_list else []
 
@@ -1736,14 +1832,13 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
             posts_list = queue_order(posts_list)
 
         # ======================
-        # FILTER by LIMIT
+        # LANGUAGE BUDGET (limit × the blog's languages)
         # ======================
-        # Note: translation_limit only caps posts_list (it exists to bound
-        # LLM/API cost). Deletion is free and local, so extra_rows is not
-        # limited.
-        if translation_limit is not None and posts_list is not None:
-            if translation_limit < len(posts_list):
-                posts_list = posts_list[:translation_limit]
+        # Bounds LLM cost and run time; a row that doesn't fit is cut and
+        # stays open in the queue for the rest. Deletion is free and local,
+        # so extra_rows is not limited.
+        if budget is not None and posts_list:
+            posts_list = apply_language_budget(posts_list, budget)
 
         orchestrator = TranslationOrchestrator(api_key=key)
 
@@ -1755,13 +1850,16 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
 
         else:
             if posts_list:
-                info(f"    Queue: {len(posts_list)} post(s){skipped_note}")
+                n_total = sum(len([l for l in p[7].split(',') if l.strip()]) for p in posts_list)
+                info(f"    Queue: {len(posts_list)} row(s), {n_total} translation(s)"
+                     + (f" of {budget}" if budget else "") + skipped_note)
                 for no, post in enumerate(posts_list, 1):
                     n_langs = len([l for l in post[7].split(',') if l.strip()])
-                    info(f"      {no}. {post[1]}/{post[2]} · {post[4]} · {n_langs} langs"
-                         + (" · retranslate" if is_outdated_row(post) else ""))
+                    prio = post[10] if len(post) > 10 and post[10] else "default"
+                    info(f"      {no}. {post[1]}/{post[2]} · {post[4]} · {n_langs} langs · {post[5]} · {prio}")
 
-                metrics = orchestrator.translate_files(currentDomain, target_author, translation_limit, posts_list)
+                metrics = orchestrator.translate_files(currentDomain, target_author, translation_limit, posts_list,
+                                                       deadline=deadline)
 
             if extra_rows:
                 info(f"\n    Deleting extra/junk files for {len(extra_rows)} post(s)")

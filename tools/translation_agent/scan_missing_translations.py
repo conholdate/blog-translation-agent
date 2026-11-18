@@ -193,7 +193,9 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             # print (f"valid_md_file_regex: {valid_md_file_regex}")
             # print (f"total_valid_files_count: {total_valid_files_count}")
 
-            result = validate_blog_dirs(local_repo_path, valid_md_file_regex, valid_extensions, total_valid_files_count)
+            all_posts = set()     # every (product, post folder) seen — validates manual queue rows
+            result = validate_blog_dirs(local_repo_path, valid_md_file_regex, valid_extensions, total_valid_files_count,
+                                        all_posts=all_posts)
             # print (f"Invalid Translations Investigation Result ->\n{result}")
 
             # print(f"{domain_name}     \t-\t {len(result)}\tInvalid blog directories. ")
@@ -269,7 +271,8 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             print(f"{len(outdated_rows)} outdated  >  ", end=' ', flush=True)
 
             # --- Reconcile the queue (domain tab); closed rows move to history ---
-            synced = sync_domain_queue(domain, findings, scan_date)
+            synced = sync_domain_queue(domain, findings, scan_date, posts=all_posts,
+                                       supported_langs=[l for l in valid_extensions.split("|") if l])
             replace_cleanup_rows(domain, extra_rows, scan_date)
             sheet_link = synced["url"]
 
@@ -343,7 +346,8 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
     return missing_translations_stats
 
 # =========================================
-def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_valid_files_count):
+def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_valid_files_count,
+                       all_posts: set = None):
     """
     Find posts with missing, extra or outdated translations.
 
@@ -352,7 +356,9 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
     post's index.md was committed after it (git history of base_path; skipped
     when base_path isn't a git checkout, e.g. the local test mirror).
 
-    Returns a list of dicts, one per post with at least one issue.
+    Returns a list of dicts, one per post with at least one issue. If all_posts
+    is given, every post checked (non-draft, with index.md) is added to it as
+    (product, post folder) — used to validate manual queue rows.
     """
     invalid_blog_dirs = []
     supported_langs = [l for l in valid_extensions.split("|") if l]
@@ -385,6 +391,8 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
             # isn't final yet and it won't be reflected in translations once set.
             if meta["draft"]:
                 continue
+            if all_posts is not None:
+                all_posts.add((product_name, blog_dir))
 
             md_files    = {file for file in os.listdir(blog_dir_path) if file.endswith(".md")}
             valid_files = {file for file in md_files if valid_md_file_regex.match(file)}

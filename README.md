@@ -131,17 +131,17 @@ Enable branch protection on `main` requiring these checks so nothing merges with
 
 ### Operational workflows
 
-Run on a daily cron and can also be triggered manually via `workflow_dispatch`:
+The scan runs at 00:00 and 12:00 UTC; the five maintained blogs' translation workflows start when a scheduled scan finishes (`workflow_run`) — two runs per blog a day, 2 posts' worth each (limit × the blog's languages), one run per blog at a time. All can be triggered manually via `workflow_dispatch`:
 
 | Workflow file | Domain | Schedule (UTC) | What it does |
 |---------------|--------|----------------|--------------|
-| `scan-missing-translations.yml` | All 6 domains | 00:00 daily | Scans all blog repos for missing, extra and outdated translations and writes results to Google Sheets |
-| `translate-blog-aspose-com.yml` | blog.aspose.com | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
-| `translate-blog-aspose-cloud.yml` | blog.aspose.cloud | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
-| `translate-blog-groupdocs-com.yml` | blog.groupdocs.com | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
-| `translate-blog-groupdocs-cloud.yml` | blog.groupdocs.cloud | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
-| `translate-blog-conholdate-com.yml` | blog.conholdate.com | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
-| `translate-blog-conholdate-cloud.yml` | blog.conholdate.cloud | 01:00 daily | Translates missing and retranslates outdated posts, commits to the blog repo |
+| `scan-missing-translations.yml` | All 6 domains | 00:00 and 12:00 | Scans all blog repos for missing, extra and outdated translations and reconciles the translation queue in Google Sheets |
+| `translate-blog-aspose-com.yml` | blog.aspose.com | after each scheduled scan | Works the translation queue by priority (missing, issues, outdated), commits to the blog repo |
+| `translate-blog-aspose-cloud.yml` | blog.aspose.cloud | after each scheduled scan | Works the translation queue by priority (missing, issues, outdated), commits to the blog repo |
+| `translate-blog-groupdocs-com.yml` | blog.groupdocs.com | manual only | Report-only blog: not translated on a schedule |
+| `translate-blog-groupdocs-cloud.yml` | blog.groupdocs.cloud | after each scheduled scan | Works the translation queue by priority (missing, issues, outdated), commits to the blog repo |
+| `translate-blog-conholdate-com.yml` | blog.conholdate.com | after each scheduled scan | Works the translation queue by priority (missing, issues, outdated), commits to the blog repo |
+| `translate-blog-conholdate-cloud.yml` | blog.conholdate.cloud | after each scheduled scan | Works the translation queue by priority (missing, issues, outdated), commits to the blog repo |
 
 ### Release & alerts
 

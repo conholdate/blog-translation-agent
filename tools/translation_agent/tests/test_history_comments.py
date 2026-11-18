@@ -205,3 +205,60 @@ class TestPerRowCommentContent:
         assert comment_for(["es", "fa"]) == (
             "- Date: D\n- ⚠️ Partial 1/2\n- Failed: fa\n"
             "- EN links kept (translated URL would be 404): /total/foo/ [fa]")
+
+
+class TestClosingLanguages:
+    """append_queue_comments(done_langs=…): Step 2 removes what it translated and closes empty rows."""
+
+    @pytest.fixture
+    def ws(self, monkeypatch):
+        ws = FakeWorksheet([
+            config.HEADERS_QUEUE,
+            _queue_row("post", langs="de, fr"),                       # row 2 MISSING
+            _queue_row("post", langs="fr", issue="OUTDATED"),         # row 3
+            _queue_row("post", langs="fr, it", issue="ISSUE"),        # row 4
+            _queue_row("other", langs="fr"),                          # row 5
+        ])
+        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: ws)
+        self.history = []
+        monkeypatch.setattr(gs, "append_history_rows",
+                            lambda domain, rows: self.history.extend(rows) or True)
+        return ws
+
+    def rows(self, ws):
+        return [(r[2], r[5], r[7]) for r in [[row[config.HEADERS_QUEUE.index(h)] for h in
+                ("Domain", "Product", "Blog Post Directory", "Blog Post URL", "Author", "Issue",
+                 "Count", "Target Translations")] for row in ws.get_all_values()[1:]]]
+
+    def test_one_translation_settles_every_row_tracking_the_language(self, ws):
+        gs.append_queue_comments("blog.aspose.com", "post", lambda langs: "ok",
+                                 run_langs=["fr"], done_langs=["fr"])
+        assert self.rows(ws) == [("post", "MISSING", "de"), ("post", "ISSUE", "it"), ("other", "MISSING", "fr")]
+        (closed,) = self.history
+        assert closed["Issue"] == "OUTDATED" and closed["Status"] == "completed"
+        assert closed["Comments"] == "ok" and closed["Completed Date"]
+
+    def test_shrunk_rows_become_partial(self, ws):
+        gs.append_queue_comments("blog.aspose.com", "post", lambda langs: "ok",
+                                 run_langs=["de"], done_langs=["de"])
+        status = config.HEADERS_QUEUE.index("Status")
+        assert ws.rows[1][status] == "partial"
+        assert ws.rows[1][config.HEADERS_QUEUE.index("Count")] == "1"
+
+    def test_closed_rows_are_deleted_bottom_up(self, ws):
+        gs.append_queue_comments("blog.aspose.com", "post", lambda langs: "ok",
+                                 run_langs=["de", "fr", "it"], done_langs=["de", "fr", "it"])
+        starts = [r["deleteDimension"]["range"]["startIndex"] for r in ws.spreadsheet.requests]
+        assert starts == sorted(starts, reverse=True) == [3, 2, 1]
+        assert self.rows(ws) == [("other", "MISSING", "fr")]
+        assert len(self.history) == 3
+
+    def test_failed_languages_stay_open(self, ws):
+        gs.append_queue_comments("blog.aspose.com", "post", lambda langs: "partial",
+                                 run_langs=["fr", "it"], done_langs=["fr"])
+        assert ("post", "ISSUE", "it") in self.rows(ws)
+
+    def test_comment_only_when_nothing_done(self, ws):
+        gs.append_queue_comments("blog.aspose.com", "post", lambda langs: "❌",
+                                 run_langs=["fr"], done_langs=[])
+        assert len(self.rows(ws)) == 4 and self.history == []

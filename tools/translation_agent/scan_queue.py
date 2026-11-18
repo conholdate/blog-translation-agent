@@ -11,8 +11,10 @@ Scanner-derived issues (MISSING, OUTDATED) are tracked per row by language:
   - a language the scan no longer flags is removed from every row tracking it;
   - a row with no language left is closed (returned for the history tab);
   - flagged languages that no open row tracks get a new row at the bottom.
-Other issues (ISSUE) can't be seen by the scan and are left as they are —
-Step 2 closes them when it has retranslated their languages.
+Other issues (ISSUE) can't be seen by the scan: they are only validated (post
+folder exists, languages supported — Status 'invalid' with the reason in Notes
+otherwise) and Step 2 closes them when it has retranslated their languages.
+Old EXTRA rows are dropped (EXTRA lives in the cleanup tab).
 
 The sheet I/O around this lives in io_google_spreadsheet.py.
 """
@@ -68,6 +70,46 @@ def is_blank(row: Row) -> bool:
     return not str(row.get(C_DOMAIN, "")).strip() or not str(row.get(C_SLUG, "")).strip()
 
 
+INVALID_PREFIX = "⚠️ Invalid: "
+
+
+def strip_invalid_note(notes: str) -> str:
+    return "\n".join(l for l in str(notes or "").split("\n") if not l.startswith(INVALID_PREFIX)).strip()
+
+
+def validate_manual_row(row: Row, posts: set, supported_langs: List[str]) -> None:
+    """
+    Check a row the scan can't see (ISSUE, or an unknown issue) against the repo:
+    its post folder must exist (non-draft, with index.md) and its languages must
+    be supported. Blank languages mean every supported language. An invalid row
+    gets Status 'invalid' and a '⚠️ Invalid: …' line on top of its Notes (the
+    person's own note is kept below); once fixed, both are cleared.
+    """
+    problems = []
+    issue = str(row.get(C_ISSUE, "")).strip()
+    if issue not in config.ISSUE_ACTIONS or issue == config.ISSUE_EXTRA:
+        problems.append(f"unknown issue '{issue}' (use {config.ISSUE_ISSUE})")
+    if (str(row.get(C_PRODUCT, "")).strip(), str(row.get(C_SLUG, "")).strip()) not in posts:
+        problems.append("post folder not found (or the post is a draft) — check Product / Blog Post Directory")
+    langs = split_langs(row.get(C_LANGS))
+    if not langs:
+        langs = list(supported_langs)
+        row[C_LANGS] = join_langs(langs)
+    bad = [l for l in langs if l not in supported_langs]
+    if bad:
+        problems.append(f"unsupported language(s): {join_langs(bad)}")
+    row[C_COUNT] = str(len(langs))
+
+    status = str(row.get(C_STATUS, "")).strip().lower()
+    notes = strip_invalid_note(row.get(C_NOTES, ""))
+    if problems:
+        row[C_STATUS] = config.STATUS_INVALID
+        row[C_NOTES] = f"{INVALID_PREFIX}{'; '.join(problems)}" + (f"\n{notes}" if notes else "")
+    elif status == config.STATUS_INVALID:
+        row[C_STATUS] = ""
+        row[C_NOTES] = notes
+
+
 def priority_rank(row: Row) -> int:
     """Rank for ordering (lower first). A blank or unknown Priority falls back to the issue's default."""
     p = str(row.get(config.KEY_PRIORITY, "")).strip().capitalize()
@@ -113,7 +155,8 @@ def closed_row(row: Row, scan_date: str, langs: List[str] = None, note: str = No
     return done
 
 
-def reconcile(queue: List[Row], findings: List[Row], scan_date: str) -> Tuple[List[Row], List[Row]]:
+def reconcile(queue: List[Row], findings: List[Row], scan_date: str,
+              posts: set = None, supported_langs: List[str] = None) -> Tuple[List[Row], List[Row], List[Row]]:
     """
     Reconcile the queue with a scan.
 
@@ -122,6 +165,9 @@ def reconcile(queue: List[Row], findings: List[Row], scan_date: str) -> Tuple[Li
                flagged languages in Target Translations, in the order new rows
                should be added (MISSING by folder, then OUTDATED newest first).
                Only MISSING / OUTDATED findings are reconciled.
+    posts / supported_langs — every (product, post folder) the scan saw (non-draft,
+               with index.md) and the blog's languages; when given, rows the
+               scan can't see (ISSUE) are validated against them.
     Returns (new_queue, closed_rows, added_rows); added_rows are also at the
     end of new_queue.
     """
@@ -136,6 +182,8 @@ def reconcile(queue: List[Row], findings: List[Row], scan_date: str) -> Tuple[Li
         row = {**{h: "" for h in config.HEADERS_QUEUE}, **row}
         key = row_key(row)
         issue = key[3]
+        if issue == config.ISSUE_EXTRA:
+            continue        # EXTRA rows live in the cleanup tab now
 
         if issue in SCANNER_ISSUES and is_open(row):
             hist = split_langs(row[C_LANGS])
@@ -159,6 +207,10 @@ def reconcile(queue: List[Row], findings: List[Row], scan_date: str) -> Tuple[Li
             # held / invalid scanner rows still count as tracking their languages,
             # so the scan doesn't add duplicates behind a row someone put on hold
             tracked.setdefault(key, set()).update(split_langs(row[C_LANGS]))
+        elif posts is not None and (is_open(row) or
+                                    str(row.get(C_STATUS, "")).strip().lower() == config.STATUS_INVALID):
+            validate_manual_row(row, posts, supported_langs or [])
+            row[config.KEY_SCAN_DATE] = scan_date
 
         if not str(row.get(config.KEY_MISSING_SINCE, "")).strip():
             row[config.KEY_MISSING_SINCE] = scan_date[:10]

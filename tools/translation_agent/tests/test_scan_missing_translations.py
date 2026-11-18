@@ -206,8 +206,9 @@ class TestQueueWrite:
         monkeypatch.setitem(config.domains_data[domain], config.KEY_SUPPORTED_LANGS, LANGS)
         calls = {}
 
-        def fake_sync(d, findings, scan_date):
+        def fake_sync(d, findings, scan_date, posts=None, supported_langs=None):
             calls["queue"] = findings
+            calls["posts"], calls["langs"] = posts, supported_langs
             return {"ok": True, "open": len(findings), "new": len(findings), "closed": 0,
                     "url": "https://sheet#gid=1"}
 
@@ -233,6 +234,13 @@ class TestQueueWrite:
         assert calls["queue"][0][config.KEY_ACTION] == config.ACTION_TRANSLATE
         assert [(r[config.KEY_ISSUE], r[config.KEY_MISSING_FILES]) for r in calls["cleanup"]] == [("EXTRA", "xx")]
         assert stats.items_discovered == 3 and stats.items_succeeded == 3
+
+    def test_all_posts_and_languages_passed_for_manual_row_checks(self, run, tmp_path):
+        _post(tmp_path, "2024-01-01-a", {"index.md": EN.format(slug="a"), "index.de.md": "x", "index.fr.md": "x"})
+        _post(tmp_path, "2024-01-02-d", {"index.md": EN.format(slug="d").replace("title: T", "title: T\ndraft: true")})
+        calls, _ = run()
+        assert calls["posts"] == {("words", "2024-01-01-a")}       # drafts are not valid targets
+        assert calls["langs"] == ["de", "fr"]
 
     def test_summary_links_to_the_queue_tab(self, run, tmp_path):
         _post(tmp_path, "2024-01-01-a", {"index.md": EN.format(slug="a")})

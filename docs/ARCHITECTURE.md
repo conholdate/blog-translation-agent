@@ -42,6 +42,7 @@ One agent. Four pipeline steps. Two implementation directories.
 |-----------|------|----------------|
 | Scanner | `scan_missing_translations.py` | Walks blog repos (skipping drafts and folders without `index.md`), finds missing `index.{lang}.md` files, extra/junk files and translations whose `index.md` was committed after them; writes one row per (post, issue) — `MISSING`/`Translate`, `EXTRA`/`Delete`, `OUTDATED`/`Retranslate` — with a `Notes` reason, and **reconciles** them into the persistent queue (the domain tab: fixed languages removed, closed rows moved to `history`, new findings added at the bottom; EXTRA rows to the `cleanup` tab). See [ORCHESTRATION.md — Step 1](ORCHESTRATION.md#step-1--scan-consolidated-scan-sheet) |
 | Queue logic | `scan_queue.py` | Pure reconcile rules for the persistent queue (no sheet access): per-language row shrinking / closing, new rows, priorities, open/held Status, column merging |
+| Queue add | `queue_add.py` | CLI for people and agents to request a retranslation (ISSUE row) via `io_google_spreadsheet.add_to_queue()`, which skips languages already queued for retranslation |
 | Queue reset | `reset_scan_queue.py` | One-time, by hand (18 Nov 2026): backs up tabs, deletes non-completed and blog.groupdocs.com history rows, clears domain + cleanup tabs (dry run unless `--apply`) |
 | Scan helpers | `scan_helpers.py` | Front matter reading (`utf-8-sig`, front matter block only), one-pass `git log` of a blog's content (`last_commits()`), the OUTDATED rule (`outdated_langs()`) and the Notes texts |
 | Orchestrator | `translator.py` — `TranslationOrchestrator` | Coordinates the translation workflow, manages agents and token tracking; translates `MISSING` rows and overwrites files for `OUTDATED` rows; open queue rows only, by Priority (Urgent, High, Normal, Low — defaults MISSING High, OUTDATED Low), then sheet order; also deletes junk files flagged by `EXTRA`-issue rows (`delete_extra_files()`) |
@@ -166,12 +167,12 @@ blog-translation-agent/
 | Tests | `pytest` with a coverage floor (`--cov-fail-under=35`) |
 | Secret & env-dump scan | Fails if a workflow reintroduces `run: env` or a hardcoded secret appears in tracked source |
 
-**Operational** — daily cron + manual dispatch:
+**Operational** — scan twice a day, translations chained to it, plus manual dispatch:
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `scan-missing-translations.yml` | Daily 00:00 UTC + manual | Runs scanner for all 6 domains (blog repo checked out with full history for the OUTDATED check) |
-| `translate-blog-*.yml` (per domain) | Daily 01:00 UTC + manual | Translates missing posts and retranslates outdated ones (max 3 posts per run), syncs with `git merge --ff-only --autostash`, commits one commit per post |
+| `scan-missing-translations.yml` | 00:00 and 12:00 UTC + manual | Runs scanner for all 6 domains (blog repo checked out with full history for the OUTDATED check); `fail-fast: false` |
+| `translate-blog-*.yml` (per domain) | When a scheduled scan finishes (`workflow_run`; not groupdocs.com) + manual | Works the queue by priority within a language budget (limit × the blog's languages, default 2 posts' worth) and a 5 h time limit, syncs with `git merge --ff-only --autostash`, commits one commit per post; one run per blog at a time (`concurrency`) |
 | `translate-blogs.yml` | Manual dispatch | Translates a chosen domain, product, author, and limit |
 
 **Release & alerts:**

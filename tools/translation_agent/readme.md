@@ -8,7 +8,7 @@ This directory implements the first two steps of the **Blog Translation Agent**:
 
 | Step | Script | What it does |
 |------|--------|--------------|
-| **1 — Scan** | `scan_missing_translations.py` | Walks all blog repositories, finds missing, extra and outdated translations, writes results (with a `Notes` reason) to Google Sheets |
+| **1 — Scan** | `scan_missing_translations.py` | Walks all blog repositories, finds missing, extra and outdated translations (with a `Notes` reason) and reconciles them into the persistent translation queue (domain tab of the scan sheet) |
 | **2 — Translate** | `translator.py` | Reads the scan results, fills in missing translations and retranslates outdated ones using an LLM (preserving formatting, code blocks, and front matter), and deletes extra/junk files flagged with `Action = Delete` |
 
 Steps 3 & 4 (Quality Check and Retranslate) live in `tools/quality_agent/`. See the [root README](../../README.md) for the full pipeline.
@@ -71,7 +71,7 @@ PROFESSIONALIZE_API_KEY=
 PROFESSIONALIZE_BASE_URL=
 PROFESSIONALIZE_LLM_MODEL=
 
-# Google Sheets — per-domain scan sheets (full JSON, minified to one line)
+# Google Sheets — scan summary sheet and quality sheets (full JSON, minified to one line)
 GOOGLE_CREDENTIALS_JSON_SK=
 
 # Google Sheets — consolidated scan sheet (full JSON, minified to one line)
@@ -94,7 +94,7 @@ METRICS_API_KEY=
 METRICS_WEBHOOK_URL_TEAM=
 METRICS_TOKEN_TEAM=
 
-# Scanning sheet IDs
+# Old per-domain scan sheet IDs — no longer written or read (since 18 Nov 2026)
 TRANSLATION_SCAN_SHEET_ID_ASPOSE_COM=
 TRANSLATION_SCAN_SHEET_ID_ASPOSE_CLOUD=
 TRANSLATION_SCAN_SHEET_ID_GROUPDOCS_COM=
@@ -111,7 +111,11 @@ TRANSLATION_SCAN_SHEET_ID_TEST_QA=
 
 ### Step 1: Scan for Missing Translations
 
-Scans blog repositories and writes results to Google Sheets. No LLM key is needed to scan.
+Scans blog repositories and reconciles the results into the translation queue — the domain tab of
+the consolidated scan sheet, which is never cleared: fixed languages are removed, rows with nothing
+left move to `history`, new findings are added at the bottom, and people's edits (row splits,
+Priority, Status, Comments) are kept. EXTRA rows go to the shared `cleanup` tab. No LLM key is
+needed to scan.
 
 ```bash
 python tools/translation_agent/scan_missing_translations.py --domain <DOMAIN>
@@ -143,9 +147,20 @@ python tools/translation_agent/scan_missing_translations.py --domain blog.aspose
 
 ### Step 2: Translate Blog Posts
 
-Reads the scan sheet, translates posts into missing languages (`MISSING` rows) and overwrites
-outdated translations (`OUTDATED` rows). MISSING rows always run before OUTDATED rows; `--limit`
-counts both.
+Reads the queue (domain tab) and translates posts into missing languages (`MISSING` rows), and
+overwrites translations for `OUTDATED` rows and `ISSUE` rows (retranslation requests). Open rows
+only, by Priority — Urgent, High (MISSING), Normal (ISSUE), Low (OUTDATED) — then sheet order. The
+run translates up to `--limit` × the blog's languages (a row that doesn't fit is cut; the rest stays
+queued) and starts no new language after `--time-limit` minutes (default 300). Translated languages
+are closed in the queue right after each post.
+
+To request a retranslation (ISSUE row):
+
+```bash
+python tools/translation_agent/queue_add.py --domain blog.aspose.com \
+  --post pdf/2024-05-01-my-post --langs "fr, de" --reason "Tables left in English" \
+  [--source <agent>] [--priority Urgent] [--dry-run]
+```
 
 ```bash
 python tools/translation_agent/translator.py \
@@ -153,7 +168,8 @@ python tools/translation_agent/translator.py \
   --key <API_KEY> \
   [--product <PRODUCT>] \
   [--author <AUTHOR>] \
-  [--limit <NUMBER>]
+  [--limit <POSTS_WORTH>] \
+  [--time-limit <MINUTES>]
 ```
 
 **Required Parameters:**
@@ -163,7 +179,8 @@ python tools/translation_agent/translator.py \
 **Optional Parameters:**
 - `--product` — Specific product (e.g., email, cells, conversion)
 - `--author` — Author name (e.g., "Muhammad Mustafa")
-- `--limit` — Number of posts to translate
+- `--limit` — Run budget in posts' worth: limit × the blog's language count translations (default 3; workflows use 2)
+- `--time-limit` — Minutes after which no new language is started (default 300)
 
 ---
 
@@ -202,8 +219,11 @@ tools/translation_agent/
 ├── translator.py                  # TranslationOrchestrator + 3 agent classes + delete_extra_files()
 ├── scan_missing_translations.py   # Missing / extra / outdated-translation scanner
 ├── scan_helpers.py                # Scanner helpers: front matter, git history, Notes text
+├── scan_queue.py                  # Queue reconcile rules (pure logic, no sheet access)
+├── queue_add.py                   # CLI: request a retranslation (ISSUE row)
+├── reset_scan_queue.py            # One-time queue reset (18 Nov 2026; dry run unless --apply)
 ├── git_repo_utils.py              # Clone / pull blog repos via GitHub PAT
-├── io_google_spreadsheet.py       # Google Sheets read/write
+├── io_google_spreadsheet.py       # Google Sheets: queue sync / read, cleanup, history, comments, add_to_queue
 ├── build_commit_message.py        # Commit title/body from staged files (Translate / Retranslate / Remove)
 ├── commit_translations.py         # One commit per post, used by the translate workflows
 ├── utils.py                       # Metrics webhook calls
@@ -239,21 +259,23 @@ For the full control flow and state model see [docs/ORCHESTRATION.md](../../docs
 
 ### Daily Scan Workflow
 
-Runs automatically at 00:00 UTC daily.
+Runs automatically at 00:00 and 12:00 UTC.
 
 **File:** `.github/workflows/scan-missing-translations.yml`
 
 **Trigger:** Scheduled (cron) or manual dispatch
 
-**Matrix:** Runs for all 6 domains in parallel
+**Matrix:** Runs for all 6 domains in parallel (`fail-fast: false`)
 
 ### Translation Workflows
 
-Run automatically at 01:00 UTC daily, one workflow per domain.
+One workflow per domain. The five maintained blogs' workflows start when a scheduled scan finishes
+(two runs per blog a day, 2 posts' worth each); blog.groupdocs.com is manual only. One run per blog
+at a time.
 
 **Files:** `.github/workflows/translate-blog-*.yml`
 
-**Trigger:** Scheduled (cron) or manual dispatch
+**Trigger:** `workflow_run` after a scheduled scan (success or failure; not cancelled or manual scans), or manual dispatch
 
 ---
 
@@ -268,16 +290,16 @@ Scan results are automatically saved to Google Sheets with:
 - Count
 - Target Translations (missing / outdated language codes, or junk fragments for `EXTRA`)
 - Action (`Translate`, `Delete` or `Retranslate`)
-- Status (filled by hand)
+- Status — blank / `partial` = open; `hold` (or any other value) = skipped; `invalid` = a manual row the scan can't match
 - Notes — why the row was flagged, e.g. `New post`, `3 of 21 languages missing`,
   `English updated 2026-11-16 by optimizer-agent ("Optimized Blog Posts"); translations from 2025-05-09`;
   when the English commit also changed some translations (a fix across languages) it adds
   `; same commit changed 18 of 22 translations` — the untouched ones are still retranslated
 - Direct links to details
 
-The consolidated sheet's domain tab also has Scan Date, Missing Since and Days Missing in front; the
-`history` tab tracks each (post, issue) as `pending` → `partial` → `completed` with Comments (Step 2
-results) and Notes.
+The domain tab (the queue) also has Scan Date, Missing Since (first flagged, never changed), Days
+Missing, Priority, Source and Comments (Step 2 results). Closed rows move to the `history` tab
+(completed rows only; none for blog.groupdocs.com). EXTRA rows are in the `cleanup` tab.
 
 **Summary Sheet:** Aggregated daily reports across all domains
 
@@ -300,8 +322,9 @@ checks out with `fetch-depth: 0`; keep it.
 
 **A fix in the English post was flagged OUTDATED but needs no retranslation**
 Commit the English fix together with the same fix in the translations — equal commit times are not
-outdated. Removing the row from the domain tab only skips it until the next daily scan adds it back;
-to settle it, commit the translations after the English fix (any commit that touches them).
+outdated. To skip it, set the row's Status to `hold` (removing the row only skips it until the next
+scan adds it back); to settle it, commit the translations after the English fix (any commit that
+touches them).
 
 **Translation fails with `401 Authentication Error`**
 Verify API key is valid and active.

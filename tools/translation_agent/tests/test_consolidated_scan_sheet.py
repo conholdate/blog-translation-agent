@@ -258,3 +258,71 @@ class TestHistoryTab:
         gs._ensure_history_columns(ws)
         assert ws.row_values(1) == gs.HISTORY_HEADERS
         assert ws.col_count == 15
+
+
+# ============================================================================
+# add_to_queue
+# ============================================================================
+
+class TestAddToQueue:
+    @pytest.fixture
+    def ws(self, monkeypatch):
+        ws = FakeWorksheet(queue_values(
+            {"Domain": DOMAIN, "Product": "medical", "Blog Post Directory": "p", "Issue": "OUTDATED",
+             "Target Translations": "fr"},
+            {"Domain": DOMAIN, "Product": "medical", "Blog Post Directory": "p", "Issue": "ISSUE",
+             "Target Translations": "de", "Status": "hold"}))
+        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: ws)
+        return ws
+
+    def test_adds_an_issue_row_at_the_bottom(self, ws):
+        assert gs.add_to_queue(DOMAIN, "medical", "p", ["it", "ja"], "tables in English",
+                               source="quality-agent") == ["it", "ja"]
+        row = as_dicts(ws)[-1]
+        assert row["Issue"] == "ISSUE" and row["Action"] == "Retranslate"
+        assert row["Target Translations"] == "it, ja" and row["Count"] == "2"
+        assert row["Priority"] == "Normal" and row["Source"] == "quality-agent"
+        assert row["Notes"] == "tables in English" and row["Missing Since"]
+        assert ws.calls[-1] == ("append_rows", None, "RAW")
+
+    def test_languages_already_being_retranslated_are_skipped(self, ws):
+        assert gs.add_to_queue(DOMAIN, "medical", "p", ["fr", "it"], "x") == ["it"]
+        assert gs.add_to_queue(DOMAIN, "medical", "p", ["fr"], "x") == []
+
+    def test_held_rows_do_not_count(self, ws):
+        assert gs.add_to_queue(DOMAIN, "medical", "p", ["de"], "x") == ["de"]
+
+    def test_priority_and_all_languages(self, ws):
+        assert gs.add_to_queue(DOMAIN, "medical", "p", [], "x", priority="Urgent") == ["(all)"]
+        row = as_dicts(ws)[-1]
+        assert row["Priority"] == "Urgent" and row["Target Translations"] == ""
+
+    def test_empty_tab_gets_a_header(self, monkeypatch):
+        ws = FakeWorksheet([])
+        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: ws)
+        gs.add_to_queue(DOMAIN, "medical", "p", ["fr"], "x")
+        assert ws.get_all_values()[0] == config.HEADERS_QUEUE and len(ws.get_all_values()) == 2
+
+    def test_unreadable_queue_returns_none(self, monkeypatch):
+        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: None)
+        assert gs.add_to_queue(DOMAIN, "medical", "p", ["fr"], "x") is None
+
+
+class TestQueueAddCli:
+    def test_rejects_unsupported_language(self, monkeypatch):
+        import queue_add
+        monkeypatch.setattr(gs, "add_to_queue", lambda *a, **k: pytest.fail("must not write"))
+        assert queue_add.main(["--domain", DOMAIN, "--post", "pdf/p", "--langs", "xx", "--reason", "r"]) == 2
+
+    def test_dry_run_writes_nothing(self, monkeypatch):
+        import queue_add
+        monkeypatch.setattr(gs, "add_to_queue", lambda *a, **k: pytest.fail("must not write"))
+        assert queue_add.main(["--domain", DOMAIN, "--post", "pdf/p", "--reason", "r", "--dry-run"]) == 0
+
+    def test_passes_parsed_post(self, monkeypatch):
+        import queue_add
+        seen = {}
+        monkeypatch.setattr(gs, "add_to_queue", lambda *a, **k: seen.update(args=a, kw=k) or ["fr"])
+        assert queue_add.main(["--domain", DOMAIN, "--post", "content/Aspose.Blog/pdf/p/",
+                               "--langs", "fr", "--reason", "r", "--source", "bot"]) == 0
+        assert seen["args"][:4] == (DOMAIN, "pdf", "p", ["fr"]) and seen["kw"]["source"] == "bot"

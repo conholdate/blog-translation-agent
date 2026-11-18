@@ -102,7 +102,10 @@ Blog Translation Agent
        per-domain sheets (no longer written). Open rows only (Status blank / pending / partial),
        by Priority (Urgent, High, Normal, Low; blank → issue default), then sheet order — a post
        may be split by hand over several rows (e.g. to translate 2 languages first). OUTDATED
-       rows overwrite the existing translation
+       and ISSUE rows overwrite the existing translation. Budget: limit (posts' worth) × the
+       blog's languages; a row that doesn't fit is cut, the rest stays queued. No new language
+       starts after 5 h (TRANSLATION_TIME_LIMIT_MIN), so the run still commits before GitHub's
+       6 h kill
     2. Checkout target blog repo (read-only except content/)
     3. Translate English index.md → index.{lang}.md
     4. Write translated file to blog-checkedout-repo/content/...
@@ -111,7 +114,8 @@ Blog Translation Agent
        "Comments" column of the post's open queue rows (moves to `history` with the row) —
        production only; local runs print it. Each row sharing a language with the run gets a
        comment for just its own languages; no shared language → last open row. Rows are found
-       by key at write time, never by remembered row numbers
+       by key at write time, never by remembered row numbers. Translated languages are removed
+       from every open row of the post; empty rows move to `history` (ISSUE rows close only here)
 
   Step 3 — Quality Check
     Phase A — Scanner
@@ -183,7 +187,7 @@ with the date, and update `Last updated` above.
 | 2026-10-29 | Never run `git commit` (or push) without asking the user first. Suggest a title and message instead. |
 | 2026-10-29 | When a commit is allowed, author and commit as **Shoaib Khan — `shoaibkhan-aspose` <shoaib.khan@aspose.com>**. |
 | 2026-10-29 | Do not start working on a task until the user's message is complete (they sometimes hit Enter early). Restate the understanding and get a "go ahead" ("double-take confirmation") before starting. |
-| 2026-10-29 | A translation run must not exceed **3 posts** (2 posts take ~3 hours). Workflow input "Max Posts to Translate" is a 1/2/3 choice; keep defaults ≤ 3. |
+| 2026-10-29 | A translation run must not exceed **3 posts** (2 posts take ~3 hours). Workflow input "Max Posts to Translate" is a 1/2/3 choice; keep defaults ≤ 3. *Superseded 2026-11-18 — see below.* |
 | 2026-10-29 | Do not add the agent's email to commits. The trailer is just `Co-Authored-By: Claude Opus 5.5` (model name, no `<noreply@anthropic.com>`). |
 | 2026-10-29 | For local testing, copy posts from a freshly fetched blog repo into `blog-checkedout-repo/content/<Domain>/<product>/`. Emptying that folder first (and removing product folders with no posts) is fine — it is an untracked mirror. Test with only a few languages to save LLM cost. |
 | 2026-10-29 | Commits to blog repos (only after approval) go to: **blog.aspose.com**, **blog.aspose.cloud**, **blog.groupdocs.cloud**, **blog.conholdate.com**, **blog.conholdate.cloud**. |
@@ -193,3 +197,6 @@ with the date, and update `Last updated` above.
 | 2026-11-17 | Split work into reasonable, self-contained commits (each passing the tests), still only after the user approves. |
 | 2026-11-18 | The domain tab is a persistent translation queue: scans reconcile it, never clear it. Queue = MISSING (High), ISSUE (Normal, manual/agent), OUTDATED (Low, any English commit); `Urgent` is set by the user only and never overwritten. EXTRA goes to one shared `cleanup` tab. Closed rows move to `history`, which keeps completed rows only. |
 | 2026-11-18 | blog.groupdocs.com: keep its queue (missing / outdated / extra) but write nothing to `history` for it. |
+| 2026-11-18 | Run budget is in **translations**, not posts: limit (1/2/3, "posts' worth", keep ≤ 3) × the blog's language count, with a **5 h** time limit (no new language after it). Rows that don't fit are cut, not skipped. |
+| 2026-11-18 | Scan at 00:00 and 12:00 UTC; the five maintained blogs' translations start when a scheduled scan finishes (workflow_run, not after manual or cancelled scans), limit 2 each — two runs per blog a day. One run per blog at a time (concurrency). |
+| 2026-11-18 | Retranslation requests from people or agents go in as ISSUE rows via `queue_add.py` / `add_to_queue()` (no duplicate languages); the scan marks unmatched rows `invalid`. |

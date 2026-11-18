@@ -1,9 +1,11 @@
 name: Auto Translate - blog.conholdate.com
 
 on:
-  schedule:
-    - cron: "0 1 * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
-    # - cron: "0/10 * * * *" # Runs between 8-9 AM GMT+5 Mon-Fri
+  # Starts as soon as the scheduled scan has finished (00:00 and 12:00 UTC), so every
+  # run works from a freshly reconciled queue. A manual scan doesn't start translations.
+  workflow_run:
+    workflows: ["Daily Blogs Scan - Missing Translations"]
+    types: [completed]
 
   workflow_dispatch:
     inputs:
@@ -122,17 +124,32 @@ on:
         default: "ALL"   # empty → optional
 
       limit:
-        description: "Max Posts to Translate (Optional)"
+        description: "Run budget in posts' worth (× the blog's languages, e.g. 2 × 21 = 42 translations)"
         required: false
-        type: choice      # capped at 3: one post takes ~1.5h (21 langs)
+        type: choice      # ≤ 3 posts' worth: one full post (21 langs) takes ~1.5 h; 5 h run time limit in code
         options: ["1", "2", "3"]
         default: "2"
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
+# One run per blog at a time: a second run (scheduled or manual) waits for the first,
+# so two runs never pick the same queue rows or race on commits. The group name is shared
+# with translate-blogs.yml.
+concurrency:
+  group: translate-${{ inputs.domain || 'blog.conholdate.com' }}
+  cancel-in-progress: false
+
 jobs:
   translate-blog-posts:
+    # workflow_run: only after a scheduled scan that ran to the end (success, or failure
+    # of another domain's scan leg — the queue is persistent, so this domain's is usable);
+    # not after a cancelled or manual scan. Manual runs (workflow_dispatch) always run.
+    if: >-
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.event == 'schedule' &&
+       (github.event.workflow_run.conclusion == 'success' ||
+        github.event.workflow_run.conclusion == 'failure'))
     runs-on: ubuntu-latest
 
     steps:
@@ -234,7 +251,7 @@ jobs:
       - name: Run Translator Agent
         env:
           GOOGLE_CREDENTIALS_JSON_SK: ${{ secrets.GOOGLE_CREDENTIALS_JSON_SK }}
-          # Consolidated scan sheet (history tab Comments column)
+          # Consolidated scan sheet (the queue: domain tab, cleanup tab, history)
           GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
           TRANSLATION_SCAN_SHEET_ID: ${{ secrets.TRANSLATION_SCAN_SHEET_ID }}
           TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_COM: ${{ secrets.TRANSLATION_SCAN_SHEET_ID_CONHOLDATE_COM }}

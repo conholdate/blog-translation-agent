@@ -183,3 +183,51 @@ class TestHelpers:
     def test_days_between(self):
         assert q.days_between("", "2026-10-29") == ""
         assert q.days_between("2026-10-21", "2026-10-29T03:00:00+00:00") == "8"
+
+
+class TestManualRowValidation:
+    POSTS = {("words", "a"), ("words", "b")}
+    LANGS = ["de", "fr", "it"]
+
+    def run(self, queue):
+        return q.reconcile(queue, [], SCAN, posts=self.POSTS, supported_langs=self.LANGS)
+
+    def test_valid_issue_row_stays_open(self):
+        (row,), _, _ = self.run([qrow("a", I, "fr", Notes="bad tables")])
+        assert row["Status"] == "" and row["Notes"] == "bad tables" and row["Scan Date"] == SCAN
+
+    def test_blank_languages_mean_all(self):
+        (row,), _, _ = self.run([qrow("a", I, "")])
+        assert row["Target Translations"] == "de, fr, it" and row["Count"] == "3"
+
+    def test_unknown_post_is_invalid_and_keeps_the_persons_note(self):
+        (row,), closed, _ = self.run([qrow("zzz", I, "fr", Notes="bad tables")])
+        assert row["Status"] == "invalid" and closed == []
+        first, second = row["Notes"].split("\n")
+        assert first.startswith("⚠️ Invalid: post folder not found") and second == "bad tables"
+
+    def test_unsupported_language_is_invalid(self):
+        (row,), _, _ = self.run([qrow("a", I, "fr, xx")])
+        assert row["Status"] == "invalid" and "unsupported language(s): xx" in row["Notes"]
+
+    def test_unknown_issue_is_invalid(self):
+        (row,), _, _ = self.run([qrow("a", "BROKEN", "fr")])
+        assert row["Status"] == "invalid" and "unknown issue 'BROKEN'" in row["Notes"]
+
+    def test_fixed_row_becomes_valid_again(self):
+        bad = qrow("zzz", I, "fr", Status="invalid", Notes="⚠️ Invalid: post folder not found\nbad tables")
+        bad["Blog Post Directory"] = "b"            # the person corrected the folder
+        (row,), _, _ = self.run([bad])
+        assert row["Status"] == "" and row["Notes"] == "bad tables"
+
+    def test_held_issue_row_is_not_validated(self):
+        (row,), _, _ = self.run([qrow("zzz", I, "fr", Status="hold")])
+        assert row["Status"] == "hold"
+
+    def test_without_post_list_nothing_is_validated(self):
+        (row,), _, _ = q.reconcile([qrow("zzz", I, "fr")], [], SCAN)
+        assert row["Status"] == ""
+
+    def test_old_extra_rows_leave_the_queue(self):
+        out, closed, _ = self.run([qrow("a", config.ISSUE_EXTRA, "tmp")])
+        assert out == [] and closed == []

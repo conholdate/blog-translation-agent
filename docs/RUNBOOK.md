@@ -11,9 +11,9 @@ Owner / on-call: **Shoaib Khan** (see [`.github/CODEOWNERS`](../.github/CODEOWNE
 | Surface | Detail |
 |---|---|
 | CI/CD | GitHub Actions — 8 workflows in `.github/workflows/` |
-| Schedule | Daily `cron: "0 0 * * *"` (01:00 UTC) per workflow; manual via `workflow_dispatch` |
+| Schedule | Scan at 00:00 and 12:00 UTC; each scheduled scan starts the five maintained blogs' translation workflows when it finishes (`workflow_run`). Manual via `workflow_dispatch` |
 | Runtime | Python 3.13, dependencies pinned in `requirements.lock` |
-| State | Google Sheets (per-domain scan tabs + append-only `history` tab) |
+| State | Google Sheets (domain tabs = persistent queue, `cleanup`, `history` = completed rows) |
 | Metrics | REST endpoint via `config.METRICS_API_URL` + `METRICS_API_KEY` (`X-Api-Key` header) |
 
 The two pipelines (Translation = Steps 1–2, Quality = Steps 3–4) are independent and can be run separately.
@@ -39,6 +39,9 @@ Each domain has its own workflow, so re-running is isolated — trigger only the
 - **Your own columns** are kept (columns are found by name). Don't put formulas in the tab — values are rewritten as plain values.
 - **Closed rows** (nothing left to translate) move to `history` at the next scan, comments included. blog.groupdocs.com rows are dropped instead (not translated, no history).
 - **Junk files (EXTRA)** are listed in the shared `cleanup` tab, not the queue.
+- **Ask for a retranslation** (bad tables, wrong terms, a quality finding): `python tools/translation_agent/queue_add.py --domain blog.aspose.com --post pdf/2024-05-01-my-post --langs "fr, de" --reason "Tables left in English"` (omit `--langs` for all languages; `--priority Urgent`; `--source <agent>`; `--dry-run`). It adds an ISSUE row (Normal) unless those languages are already queued. You can also type the row in by hand. A row the next scan can't match gets Status `invalid` and a `⚠️ Invalid: …` line in Notes — fix the folder or languages and the next scan clears it.
+- **How much a run does:** the `limit` input is posts' worth — limit × the blog's languages (2 × 21 = 42 translations on blog.aspose.com). A post needing few languages uses less, so more posts fit; a row that doesn't fit is cut and the rest stays queued. No new language starts after 5 h, so the run can still commit before GitHub's 6 h kill (a `⏸️ Time limit` comment lists what wasn't started).
+- **When rows close:** Step 2 removes the languages it translated from every open row of the post right after the post (so one retranslation settles both an OUTDATED and an ISSUE row); empty rows move to `history`. If a run's commit fails afterwards, MISSING / OUTDATED rows come back at the next scan, but an ISSUE row must be added again.
 - **One-time reset** (18 Nov 2026): `python tools/translation_agent/reset_scan_queue.py` shows what it would change; `--apply` backs up the tabs (`bak-…`), deletes non-completed and blog.groupdocs.com history rows and clears the domain + cleanup tabs. Run it only after translation runs in progress have committed, then run the scan workflow by hand to rebuild the queue.
 
 ### Outdated translations (OUTDATED / Retranslate)
@@ -46,7 +49,7 @@ Each domain has its own workflow, so re-running is isolated — trigger only the
 - Step 2 runs rows by Priority — MISSING (High) before OUTDATED (Low) by default; OUTDATED rows are added newest English edit first — overwriting the existing files; commits are titled `Retranslate articles for: …`.
 - **Fixing something in English and all translations (URL, image)?** Commit them **together** — equal commit times are not outdated. An English-only commit makes every language OUTDATED and costs ~20 LLM translations per post.
 - **Skip a flagged post:** set its Status to `hold` (any value other than blank / `pending` / `partial`) — Step 2 skips it and the scan neither closes it nor re-adds it. Deleting the row only skips it until the next scan re-adds it. To settle it for good, commit the translations after the English change.
-- **Backlog:** 763 outdated posts on the 5 maintained blogs as of 17 Nov 2026 (see [ORCHESTRATION.md — Retranslation backlog](./ORCHESTRATION.md#retranslation-backlog-as-of-17-nov-2026)). Raise the run limit only within the 3-posts-per-run rule (AGENTS.md).
+- **Backlog:** 763 outdated posts on the 5 maintained blogs as of 17 Nov 2026 (see [ORCHESTRATION.md — Retranslation backlog](./ORCHESTRATION.md#retranslation-backlog-as-of-17-nov-2026)). Two runs a day per blog at 2 posts' worth each; raise the limit only within the 3-posts'-worth rule (AGENTS.md).
 
 ---
 
@@ -87,7 +90,7 @@ The agent only writes language variants (`index.{lang}.md`) — it never modifie
 | Metrics not recorded | Metrics endpoint/key issue | Non-blocking by design — fix `METRICS_*`, no pipeline impact. |
 | Scan log: `No git history for … — OUTDATED check skipped` | Blog repo checked out without history | Keep `fetch-depth: 0` in `scan-missing-translations.yml`. Locally expected (the test mirror has no history). |
 | Translate workflow fails at `git merge --ff-only --autostash` with a stash conflict | Someone pushed a change to the same translation file the run retranslated | Re-run the post; the retranslation will start from the new remote version. |
-| Scan sheet `Comments` cells show `#ERROR!` | A Comments cell was written `USER_ENTERED` (parsed as a formula) | Code writes Comments `RAW` only (`append_history_comments`); `update_history_tab` no longer rewrites them (fixed 17 Nov 2026). Fix old cells by hand. |
+| Scan sheet `Comments` cells show `#ERROR!` | A Comments cell was written `USER_ENTERED` (parsed as a formula) | Code writes every queue / history cell `RAW` (`append_queue_comments`, `sync_domain_queue`, `append_history_rows`; fixed 17 Nov 2026, queue since 18 Nov 2026). Fix old cells by hand. |
 
 ---
 

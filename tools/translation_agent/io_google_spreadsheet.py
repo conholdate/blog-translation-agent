@@ -167,11 +167,13 @@ def _write_tab(ws: gspread.Worksheet, header: List[str], rows: List[dict], old_v
         ws.batch_clear([f"A{len(values) + 1}:{gspread.utils.rowcol_to_a1(old_n, width)}"])
 
 
-def sync_domain_queue(domain: str, findings: List[dict], scan_date: str) -> dict:
+def sync_domain_queue(domain: str, findings: List[dict], scan_date: str,
+                      posts: set = None, supported_langs: List[str] = None) -> dict:
     """
     Reconcile the domain tab (the queue) with this scan's MISSING / OUTDATED
     findings and move closed rows to the history tab (dropped instead for
-    config.NO_HISTORY_DOMAINS).
+    config.NO_HISTORY_DOMAINS). posts / supported_langs validate manual rows
+    (see scan_queue.validate_manual_row).
 
     Returns {"ok", "open", "new", "closed", "url"}; ok is False if the queue
     couldn't be read or written (the scan run then reports it, nothing is lost).
@@ -183,7 +185,7 @@ def sync_domain_queue(domain: str, findings: List[dict], scan_date: str) -> dict
     try:
         values = ws.get_all_values()
         header, rows = queue.from_values(values)
-        new_queue, closed, added = queue.reconcile(rows, findings, scan_date)
+        new_queue, closed, added = queue.reconcile(rows, findings, scan_date, posts, supported_langs)
         header = queue.merged_header(header, config.HEADERS_QUEUE)
         _write_tab(ws, header, new_queue, values)
         _auto_resize_columns(ws)
@@ -313,22 +315,28 @@ def append_queue_comment(domain: str, slug: str, comment: str, run_langs: List[s
     return append_queue_comments(domain, slug, lambda row_langs: comment, run_langs=run_langs)
 
 
-def append_queue_comments(domain: str, slug: str, comment_for, run_langs: List[str] = None) -> bool:
+def append_queue_comments(domain: str, slug: str, comment_for, run_langs: List[str] = None,
+                          done_langs: List[str] = None) -> bool:
     """
-    Append comment blocks to the open queue rows of (domain, post folder), any
-    issue. A post can have several open rows, each tracking its own languages
-    (MISSING / OUTDATED / ISSUE, or split by hand).
+    Record a Step 2 post result on the post's open queue rows (domain, post
+    folder — any issue: MISSING / OUTDATED / ISSUE, or split by hand).
 
-    comment_for(row_langs) builds the comment for one row:
+    Comments — comment_for(row_langs) builds the comment for one row:
       - run_langs given: every open row sharing a language with run_langs gets
         comment_for(<those shared languages, in row order>); if no row shares
         one, the last open row gets comment_for(None) (whole-run comment).
       - run_langs None: every open row gets comment_for(None).
+      Earlier comments are kept above, separated by a blank line.
+
+    Closing — done_langs (translated, or already there) are removed from every
+    open row of the post that tracks them, so one retranslation settles e.g.
+    both an OUTDATED and an ISSUE row. A row left with no language is closed:
+    removed from the queue and appended to history as completed (dropped for
+    config.NO_HISTORY_DOMAINS), its new comment included. Others become 'partial'.
 
     The tab is re-read here and rows are found by key, so rows added, removed
-    or re-sorted since the run started don't matter. Earlier comments are kept
-    above, separated by a blank line. Returns True if anything was written.
-    Never raises — comment logging must not halt the pipeline.
+    or re-sorted since the run started don't matter. Returns True if anything
+    was written. Never raises — result logging must not halt the pipeline.
     """
     try:
         ws = get_scan_worksheet(domain)
@@ -341,48 +349,133 @@ def append_queue_comments(domain: str, slug: str, comment_for, run_langs: List[s
             ws.update([[config.KEY_COMMENTS]], gspread.utils.rowcol_to_a1(1, len(header) + 1),
                       value_input_option="RAW")
             header.append(config.KEY_COMMENTS)
-        c_comments = header.index(config.KEY_COMMENTS)
+        col = {h: header.index(h) + 1 for h in header if h}
         _, rows = queue.from_values([header] + values[1:])
 
-        open_rows = []      # (sheet_row, row_langs, existing comment)
+        open_rows = []      # (sheet_row, row dict, row_langs)
         for i, row in enumerate(rows, start=2):
             if (row.get(config.KEY_DOMAIN) == domain and row.get(config.KEY_DIR_BASE) == slug
                     and queue.is_open(row)):
-                open_rows.append((i, queue.split_langs(row.get(config.KEY_MISSING_FILES)),
-                                  row.get(config.KEY_COMMENTS, "")))
+                open_rows.append((i, row, queue.split_langs(row.get(config.KEY_MISSING_FILES))))
 
         if not open_rows:
-            print(f"⚠️  No open queue row for {domain}/{slug}; comment not logged.")
+            print(f"⚠️  No open queue row for {domain}/{slug}; result not logged.")
             return False
 
-        targets = []        # (sheet_row, existing, comment)
+        comments = {}       # sheet_row -> comment
         if run_langs is None:
-            targets = [(r, existing, comment_for(None)) for r, _, existing in open_rows]
+            comments = {r: comment_for(None) for r, _, _ in open_rows}
         else:
             run = set(run_langs)
-            for r, langs, existing in open_rows:
+            for r, _, langs in open_rows:
                 shared = [l for l in langs if l in run]
                 if shared:
-                    targets.append((r, existing, comment_for(shared)))
-            if not targets:     # no row tracks these languages: keep the comment on the last open row
-                r, _, existing = open_rows[-1]
-                targets = [(r, existing, comment_for(None))]
+                    comments[r] = comment_for(shared)
+            if not comments:    # no row tracks these languages: keep the comment on the last open row
+                comments[open_rows[-1][0]] = comment_for(None)
 
-        updates = []
-        for r, existing, comment in targets:
-            text = f"{existing}\n\n{comment}" if existing else comment
-            if len(text) > HISTORY_COMMENT_MAX_LEN:
-                text = text[-HISTORY_COMMENT_MAX_LEN:]    # drop the oldest lines first
-            updates.append({"range": gspread.utils.rowcol_to_a1(r, c_comments + 1), "values": [[text]]})
+        done = set(done_langs or [])
+        updates, closed, closed_rows = [], [], []
 
-        ws.batch_update(updates, value_input_option="RAW")
-        print(f"✅ Queue comment logged for {slug} (row{'s' if len(targets) > 1 else ''} "
-              f"{', '.join(str(r) for r, _, _ in targets)}).")
+        def cell(r, h, v):
+            updates.append({"range": gspread.utils.rowcol_to_a1(r, col[h]), "values": [[v]]})
+
+        for r, row, langs in open_rows:
+            text = row.get(config.KEY_COMMENTS, "")
+            if r in comments:
+                text = f"{text}\n\n{comments[r]}" if text else comments[r]
+                if len(text) > HISTORY_COMMENT_MAX_LEN:
+                    text = text[-HISTORY_COMMENT_MAX_LEN:]    # drop the oldest lines first
+            remaining = [l for l in langs if l not in done]
+            if langs and not remaining:
+                closed.append(r)
+                closed_rows.append(queue.closed_row({**row, config.KEY_COMMENTS: text},
+                                                    datetime.now().astimezone().isoformat(), langs=langs))
+                continue
+            if r in comments:
+                cell(r, config.KEY_COMMENTS, text)
+            if len(remaining) < len(langs):
+                cell(r, config.KEY_MISSING_FILES, queue.join_langs(remaining))
+                if config.KEY_MISSING_COUNT in col:
+                    cell(r, config.KEY_MISSING_COUNT, str(len(remaining)))
+                if config.KEY_STATUS in col:
+                    cell(r, config.KEY_STATUS, "partial")
+
+        if updates:
+            ws.batch_update(updates, value_input_option="RAW")
+        if closed:
+            append_history_rows(domain, closed_rows)
+            ws.spreadsheet.batch_update({"requests": [
+                {"deleteDimension": {"range": {"sheetId": ws.id, "dimension": "ROWS",
+                                               "startIndex": r - 1, "endIndex": r}}}
+                for r in sorted(closed, reverse=True)]})      # bottom-up: no index shifts
+        print(f"✅ Queue updated for {slug}: {len(comments)} comment(s)"
+              + (f", {len(closed)} row(s) closed" if closed else "") + ".")
         return True
 
     except Exception as e:
-        print(f"⚠️  Failed to log queue comment for {domain}/{slug}: {e}", file=sys.stderr)
+        print(f"⚠️  Failed to update the queue for {domain}/{slug}: {e}", file=sys.stderr)
         return False
+
+
+def add_to_queue(domain: str, product: str, slug: str, langs: List[str], reason: str,
+                 source: str = config.SOURCE_MANUAL, priority: str = None,
+                 issue: str = config.ISSUE_ISSUE, post_url: str = "", author: str = "") -> List[str]:
+    """
+    Add a retranslation request to the queue — the one entry point for agents
+    and people (CLI: queue_add.py). Languages an open row of the post already
+    retranslates (ISSUE or OUTDATED) are skipped, so asking twice doesn't
+    duplicate work; the rest go into one new row at the bottom (Priority:
+    given, else the issue's default; Missing Since: today). Blank langs = every
+    language of the blog (resolved by the next scan's validation).
+
+    Returns the languages added (['(all)'] for blank langs), [] if nothing was
+    new, or None if the queue couldn't be read or written. Never raises.
+    """
+    try:
+        ws = get_scan_worksheet(domain)
+        if not ws:
+            return None
+        values = ws.get_all_values()
+        header, rows = queue.from_values(values)
+        if not header:
+            header = list(config.HEADERS_QUEUE)
+        header = queue.merged_header(header, config.HEADERS_QUEUE)
+
+        retranslating = {config.ISSUE_ISSUE, config.ISSUE_OUTDATED}
+        tracked = set()
+        for row in rows:
+            if (row.get(config.KEY_DOMAIN) == domain and row.get(config.KEY_PRODUCT_NAME) == product
+                    and row.get(config.KEY_DIR_BASE) == slug and queue.is_open(row)
+                    and row.get(config.KEY_ISSUE) in retranslating):
+                tracked.update(queue.split_langs(row.get(config.KEY_MISSING_FILES)))
+
+        wanted = list(dict.fromkeys(l.strip() for l in langs if l.strip()))
+        new = [l for l in wanted if l not in tracked]
+        if wanted and not new:
+            print(f"ℹ️  {domain}/{product}/{slug}: {', '.join(wanted)} already queued for retranslation.")
+            return []
+
+        today = datetime.now().astimezone().isoformat()
+        row = {h: "" for h in header}
+        row.update({
+            config.KEY_SCAN_DATE: "", config.KEY_MISSING_SINCE: today[:10], config.KEY_DAYS_MISSING: "0",
+            config.KEY_PRIORITY: priority or config.DEFAULT_PRIORITY.get(issue, config.PRIORITY_NORMAL),
+            config.KEY_DOMAIN: domain, config.KEY_PRODUCT_NAME: product, config.KEY_DIR_BASE: slug,
+            config.KEY_POST_URL: post_url, config.KEY_AUTHOR: author, config.KEY_ISSUE: issue,
+            config.KEY_MISSING_COUNT: str(len(new)), config.KEY_MISSING_FILES: queue.join_langs(new),
+            config.KEY_ACTION: config.ISSUE_ACTIONS.get(issue, ""), config.KEY_SOURCE: source,
+            config.KEY_NOTES: reason,
+        })
+        old_header = [str(h).strip() for h in values[0]] if values else []
+        if header != old_header:            # new tab, or columns missing: write the header first
+            ws.update([header], "A1", value_input_option="RAW")
+        ws.append_rows(queue.to_values([row], header), value_input_option="RAW")
+        print(f"✅ Queued {domain}/{product}/{slug} for retranslation: {', '.join(new) or 'all languages'}.")
+        return new or ["(all)"]
+    except Exception as e:
+        print(f"❌ Could not add {domain}/{product}/{slug} to the queue: {e}", file=sys.stderr)
+        return None
 
 
 def _ensure_history_columns(ws: gspread.Worksheet) -> None:

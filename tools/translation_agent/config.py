@@ -25,7 +25,10 @@ KEY_TRANSLATION_LIMIT   = "translation_limit"
 
 SEND_EMAIL_TRUE         = "Y"
 SEND_EMAIL_FALSE        = "-"
-DEFAULT_TRANSLATION_LIMIT = 3
+DEFAULT_TRANSLATION_LIMIT = 3   # "posts' worth": the run's budget is limit × the blog's language count
+# A run starts no new language after this many minutes, then finishes and commits
+# what it has: GitHub kills a job at 6 h, and a killed job commits nothing.
+TRANSLATION_TIME_LIMIT_MIN = 300
 
 # CONSOLIDATED SCAN SHEET (single sheet, one tab per domain)
 TRANSLATION_SCAN_SHEET_ID   = os.getenv("TRANSLATION_SCAN_SHEET_ID", "")

@@ -58,7 +58,7 @@ A post with several issues produces one row per issue.
   Ignored on purpose: in the checked example (`2022-04-12-extract-text-and-images-from-pdf-documents-using-java`,
   blog.conholdate.com) the hidden English changes were 1–2 line link fixes ("Fixed Broken Links",
   2023-12-13). Catching them would need rename tracking plus a size threshold on both sides
-  (`git log --numstat -M`), and would mostly queue link-fix churn against the 3-posts-per-run limit.
+  (`git log --numstat -M`), and would mostly queue link-fix churn against the run budget (3 posts' worth).
   English changes made from now on are caught; old link problems belong to the 404-link sweep and
   stale text to the quality pipeline.
 - Needs the blog repo's full history: `scan-missing-translations.yml` checks out with
@@ -84,7 +84,7 @@ What goes in the queue:
 | Issue | Who adds it | Priority (default) | Closed when |
 |---|---|---|---|
 | `MISSING` | scanner | **High** | the scan no longer finds the language missing |
-| `ISSUE` | a person or an agent (manual rows) | **Normal** | Step 2 has retranslated its languages (Phase 2) |
+| `ISSUE` | a person or an agent (manual rows, `queue_add.py` / `add_to_queue()`) | **Normal** | Step 2 has retranslated its languages |
 | `OUTDATED` | scanner (any English commit — optimizer agent or a person; the commit author is in Notes) | **Low** | the retranslation is committed (translation newer than `index.md`) |
 | any | — | **Urgent** — set by people only | — |
 
@@ -98,7 +98,8 @@ What goes in the queue:
 | … some languages no longer flagged | those languages removed, Count updated, Status `partial` |
 | … no language left | **closed**: removed from the queue and appended to `history` as `completed` |
 | flagged languages no open row tracks | **new row at the bottom** (Priority by issue, Source `Scanner`, Missing Since = today) |
-| ISSUE row (or any issue the scan can't see) | left alone; blank Priority / Source / Action / Missing Since are filled in |
+| ISSUE row (or any issue the scan can't see) | **validated** (below); otherwise left alone — blank Priority / Source / Action / Missing Since are filled in |
+| old EXTRA row in the queue | dropped (EXTRA lives in the cleanup tab) |
 | row with Status other than blank / `pending` / `partial` (e.g. `hold`, `invalid`) | left alone, never closed, and still counts as tracking its languages, so no duplicate is added behind it |
 | blank rows, old `!!! NO MISSING TRANSLATION FOUND !!!` placeholder | dropped |
 
@@ -128,8 +129,20 @@ Blog Post Directory, Blog Post URL, Author, Issue, Count, Target Translations, A
 | Status | Meaning |
 |---|---|
 | blank / `pending` / `partial` | open — Step 2 works on it |
-| `invalid` | a manual row the scanner can't match (reason in Notes) — Phase 2 |
+| `invalid` | a manual row the scanner can't match (reason in Notes) |
 | anything else (e.g. `hold`) | skipped by Step 2 and never closed by the scan, until cleared |
+
+**Manual rows (ISSUE) — validation and how to add one.** Retranslation requests the scan can't
+detect (bad tables, wrong terms, a quality finding) are ISSUE rows. Add them with
+`python tools/translation_agent/queue_add.py --domain <d> --post <product>/<folder> --langs "fr, de"
+--reason "…" [--source <agent>] [--priority Urgent]` (agents in Python: `io_google_spreadsheet.add_to_queue()`),
+or type a row into the tab by hand (Issue `ISSUE`; Domain, Product, Blog Post Directory, languages).
+`add_to_queue()` skips languages an open ISSUE / OUTDATED row of the post already retranslates and
+appends one row at the bottom (Priority Normal unless given, Source as given, Missing Since today).
+Every scan checks open and `invalid` ISSUE rows against the repo (`validate_manual_row()`): the post
+folder must exist (non-draft, with `index.md`) and every language must be one of the blog's; blank
+languages mean all of them. A failing row gets Status `invalid` and a `⚠️ Invalid: …` line on top of
+its Notes (the person's own note stays below); once corrected, the next scan clears both.
 
 **2. Cleanup tab** (`cleanup`, one tab for all domains, `config.HEADERS_CLEANUP`) — EXTRA rows.
 Each scan replaces that domain's rows and keeps the other domains'. Derived entirely from the repo,
@@ -202,7 +215,21 @@ translator.py  →  start_translation()
   Urgent, High, Normal, Low; a blank or unknown Priority (e.g. a tab from before 18 Nov 2026) falls
   back to the issue's default (MISSING High, ISSUE Normal, OUTDATED Low). Rows of the same priority
   keep their **sheet order**, so a split post ("these 2 languages first") still runs in that order.
-  `--limit` (max 3 posts per run) counts both kinds.
+- **Language budget** (since 18 Nov 2026): `--limit` is "posts' worth" — the run translates up to
+  `limit × the blog's language count` languages (`language_budget()`; e.g. 2 × 21 = 42 on blog.aspose.com,
+  3 × 17 = 51 on blog.conholdate.com), taken from the ordered queue (`apply_language_budget()`). Why:
+  a post-count cap wasted the day when the queued posts needed only one or two languages each; now
+  5 posts × 12 languages fit in a 3-posts'-worth run. A row that doesn't fit is **cut** to the
+  languages that do, and the queue row keeps the rest open; rows further down are not pulled
+  forward (that would break the priority order). A language already taken for the same post by an
+  earlier row (e.g. OUTDATED and ISSUE both asking for `fr`) is translated once.
+- **Run time limit**: no new language is started after `--time-limit` minutes (default
+  `config.TRANSLATION_TIME_LIMIT_MIN` = 300, i.e. 5 h). The post in progress gets a
+  `⏸️ Time limit n/m` comment listing the languages not started; later posts stay in the queue
+  untouched; the workflow then commits what was done. Why: GitHub kills a job at 6 h, and a killed
+  job commits nothing (~4.3 min per translation, so 63 translations ≈ 4.5 h; long posts take longer).
+- ISSUE rows behave like OUTDATED rows: they overwrite the existing translation; an ISSUE row with
+  blank languages means every language of the blog (`fill_issue_langs()`).
 - `drop_existing_translations()` drops languages whose file already exists (stale sheet) for MISSING
   rows only; OUTDATED rows pass through, their files exist by definition.
 
@@ -232,6 +259,33 @@ open row shares one, the last open row of the post gets the whole comment; a who
 by key at write time, so rows added, removed or re-sorted during the run don't matter. When the row
 is closed, its comments move with it to the history tab. Production only; local runs print it.
 (Until 18 Nov 2026 comments went to open history rows of the row's issue.)
+
+**Closing.** In the same write, the post's translated languages (and, on MISSING rows, languages that
+already existed) are removed from **every** open queue row of the post that tracks them — one
+retranslation of `fr` settles both an OUTDATED and an ISSUE row. A row left with no language is closed
+right away: deleted from the queue (bottom-up, so no row shifts) and appended to `history` as completed
+with its new comment; others become `partial`. Failed and not-started languages stay open. ISSUE rows
+can only be closed this way (the scan can't see them). Caveat: the row is closed before the workflow
+commits; if the commit then fails, MISSING / OUTDATED rows come back with the next scan, but an ISSUE
+row would have to be added again.
+
+### Scheduling (since 18 Nov 2026)
+
+- `scan-missing-translations.yml` runs at **00:00 and 12:00 UTC** (matrix of all 6 domains,
+  `fail-fast: false` so one domain's failure doesn't cancel the others).
+- The five maintained blogs' `translate-blog-*.yml` have **no schedule of their own**: they start on
+  `workflow_run` when a **scheduled** scan finishes as success or failure (a failure is usually
+  another domain's leg; the queue is persistent, so this blog's is usable — and Step 2 re-checks files
+  on disk). Not after a cancelled scan, and not after a manual scan, so re-scanning during the day
+  doesn't start a third run. Manual `workflow_dispatch` runs work as before. Inputs are empty on
+  `workflow_run`, so the defaults apply (limit 2 posts' worth).
+- `translate-blog-groupdocs-com.yml` stays manual only (blog.groupdocs.com is report-only).
+- Every translate workflow has `concurrency: translate-<domain>` with `cancel-in-progress: false`
+  (shared with `translate-blogs.yml`): a second run for the same blog waits instead of picking the
+  same rows or racing on commits. GitHub keeps one pending run per group — a newer pending run
+  replaces an older pending one.
+- `test_workflows.py` guards the scan name in `workflow_run`, the concurrency settings and the ≤ 3
+  limit, since mistakes there fail silently.
 
 ### Committing (translate workflows)
 
@@ -310,7 +364,11 @@ The first scans with the OUTDATED check flag a large backlog (local clones of 13
 
 763 posts (~14,650 files) on the 5 maintained blogs. At 3 posts per run (~1.5 h per post) that is
 ~250 runs; the newest-first order clears the last 30 days (~130 posts) in ~45 runs. The optimizer
-adds ~3 outdated posts a day on blog.aspose.com alone.
+adds ~3 outdated posts a day on blog.aspose.com alone. Since 18 Nov 2026 each blog gets **two runs a
+day of 2 posts' worth** (~42 translations each on a 21-language blog, ~3 h) — ~84 translations a day
+instead of ≤ 63 — and OUTDATED rows (Low) run only once nothing of higher priority is left. Low can
+starve if new work keeps arriving faster than that; measure before adding aging rules (e.g. promote
+to Normal after 30 days).
 
 **Idea (not planned):** retranslate only the changed parts of a post (git diff of `index.md` →
 changed frontmatter fields and paragraphs), which would cut cost and time several times over. Full
