@@ -30,14 +30,22 @@ Each domain has its own workflow, so re-running is isolated — trigger only the
 
 ### Check what happened
 1. **Actions logs** — step-level output for the run.
-2. **`history` tab** in the consolidated scan sheet — Status (`pending` / `partial` / `completed`), Completed Date, **Comments** (Step 2's per-run result for the post) and **Notes** (why the scanner flagged it) per (post, issue). The domain tab shows the same Notes for today's rows.
+2. **Domain tab (the queue)** in the consolidated scan sheet — open rows with Priority, Status (blank / `partial` open; `hold`, `invalid` skipped), **Comments** (Step 2's per-run results) and **Notes** (why it was flagged). **`history` tab** — completed rows only, with their Comments and Completed Date. The queue is persistent since 18 Nov 2026: edits there are kept by the scans (see below).
 3. **Metrics endpoint** — run_id, durations, items succeeded/failed/skipped, LLM token & call counts emitted by `send_metrics`.
+
+### Working with the queue (domain tab)
+- **Run something first:** set its Priority to `Urgent` (Urgent → High → Normal → Low; defaults MISSING High, OUTDATED Low). The scan never overwrites a priority.
+- **Translate part of a post first:** split the row by hand (copy it, divide the languages between the copies); rows of the same priority run in sheet order, and each part shrinks on its own.
+- **Your own columns** are kept (columns are found by name). Don't put formulas in the tab — values are rewritten as plain values.
+- **Closed rows** (nothing left to translate) move to `history` at the next scan, comments included. blog.groupdocs.com rows are dropped instead (not translated, no history).
+- **Junk files (EXTRA)** are listed in the shared `cleanup` tab, not the queue.
+- **One-time reset** (18 Nov 2026): `python tools/translation_agent/reset_scan_queue.py` shows what it would change; `--apply` backs up the tabs (`bak-…`), deletes non-completed and blog.groupdocs.com history rows and clears the domain + cleanup tabs. Run it only after translation runs in progress have committed, then run the scan workflow by hand to rebuild the queue.
 
 ### Outdated translations (OUTDATED / Retranslate)
 - The scanner flags a translation when the post's `index.md` was committed after it — usually the optimizer agent's "Optimized Blog Posts" commits. The Notes column names the English commit (date, author, subject) and the translations' dates.
-- Step 2 runs MISSING rows first, then OUTDATED rows newest English edit first, overwriting the existing files; commits are titled `Retranslate articles for: …`.
+- Step 2 runs rows by Priority — MISSING (High) before OUTDATED (Low) by default; OUTDATED rows are added newest English edit first — overwriting the existing files; commits are titled `Retranslate articles for: …`.
 - **Fixing something in English and all translations (URL, image)?** Commit them **together** — equal commit times are not outdated. An English-only commit makes every language OUTDATED and costs ~20 LLM translations per post.
-- **Skip a flagged post:** deleting its row from the domain tab only skips it until the next daily scan re-adds it; to settle it for good, commit the translations after the English change.
+- **Skip a flagged post:** set its Status to `hold` (any value other than blank / `pending` / `partial`) — Step 2 skips it and the scan neither closes it nor re-adds it. Deleting the row only skips it until the next scan re-adds it. To settle it for good, commit the translations after the English change.
 - **Backlog:** 763 outdated posts on the 5 maintained blogs as of 17 Nov 2026 (see [ORCHESTRATION.md — Retranslation backlog](./ORCHESTRATION.md#retranslation-backlog-as-of-17-nov-2026)). Raise the run limit only within the 3-posts-per-run rule (AGENTS.md).
 
 ---

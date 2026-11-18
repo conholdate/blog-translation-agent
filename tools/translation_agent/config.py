@@ -188,9 +188,55 @@ KEY_NOTES           = "Notes"   # why the row was flagged (written by the scanne
 ISSUE_MISSING       = "MISSING"
 ISSUE_EXTRA         = "EXTRA"
 ISSUE_OUTDATED      = "OUTDATED"    # index.md committed after the translation file
+ISSUE_ISSUE         = "ISSUE"       # bad translation flagged by a person or an agent (retranslate)
 ACTION_TRANSLATE    = "Translate"
 ACTION_DELETE       = "Delete"
 ACTION_RETRANSLATE  = "Retranslate"
+ISSUE_ACTIONS = {
+    ISSUE_MISSING : ACTION_TRANSLATE,
+    ISSUE_OUTDATED: ACTION_RETRANSLATE,
+    ISSUE_ISSUE   : ACTION_RETRANSLATE,
+    ISSUE_EXTRA   : ACTION_DELETE,
+}
+
+# TRANSLATION QUEUE (domain tabs of the consolidated scan sheet) ==========
+# The domain tab is a persistent queue: scans update it instead of rewriting
+# it, so manual rows, row splits, Priority, Status and Comments survive.
+KEY_SCAN_DATE       = "Scan Date"       # last scan that saw the row
+KEY_MISSING_SINCE   = "Missing Since"   # first flagged; never changed afterwards
+KEY_DAYS_MISSING    = "Days Missing"
+KEY_PRIORITY        = "Priority"
+KEY_SOURCE          = "Source"          # who flagged the row: Scanner, Manual, or an agent's name
+KEY_COMMENTS        = "Comments"        # per-run translation results (Step 2)
+KEY_COMPLETED_DATE  = "Completed Date"
+
+PRIORITY_URGENT     = "Urgent"          # set by people only
+PRIORITY_HIGH       = "High"
+PRIORITY_NORMAL     = "Normal"
+PRIORITY_LOW        = "Low"
+PRIORITY_RANK = {PRIORITY_URGENT: 0, PRIORITY_HIGH: 1, PRIORITY_NORMAL: 2, PRIORITY_LOW: 3}
+DEFAULT_PRIORITY = {                    # set on new rows only; a changed priority is never overwritten
+    ISSUE_MISSING : PRIORITY_HIGH,
+    ISSUE_ISSUE   : PRIORITY_NORMAL,
+    ISSUE_OUTDATED: PRIORITY_LOW,
+}
+
+SOURCE_SCANNER      = "Scanner"
+SOURCE_MANUAL       = "Manual"
+
+# Queue Status: blank / pending / partial = open (translated by Step 2);
+# invalid = a manual row the scanner could not match (see Notes);
+# any other value (e.g. "hold") = skipped by Step 2 until cleared.
+STATUS_OPEN_VALUES  = ("", "pending", "partial")
+STATUS_INVALID      = "invalid"
+STATUS_COMPLETED    = "completed"
+
+# Domains whose closed rows are dropped instead of moved to history
+# (blog.groupdocs.com: issues are reported, not translated).
+NO_HISTORY_DOMAINS  = {DOMAIN_GROUPDOCS_COM}
+
+CLEANUP_TAB         = "cleanup"         # EXTRA (junk file) rows of all domains
+HISTORY_TAB         = "history"         # completed rows only
 
 # ===== HEADERS for SUMMARY SHEET ===============
 KEY_DATE                = "Date"
@@ -215,6 +261,15 @@ HEADERS_MISSING_TRANSLATIONS = [
 # What the scanner writes: the columns above (which Step 2 reads, by name) plus
 # Notes. Step 2 doesn't need Notes, so tabs written before it existed still work.
 HEADERS_SCAN_RESULTS = HEADERS_MISSING_TRANSLATIONS + [KEY_NOTES]
+
+# The queue (domain tab) layout. Columns are always found by name, so people
+# may reorder them or add their own; missing ones are added by the scanner.
+HEADERS_QUEUE = [
+    KEY_SCAN_DATE, KEY_MISSING_SINCE, KEY_DAYS_MISSING, KEY_PRIORITY,
+] + HEADERS_MISSING_TRANSLATIONS + [KEY_SOURCE, KEY_NOTES, KEY_COMMENTS]
+
+# The cleanup tab (EXTRA rows of every domain; rebuilt per domain each scan)
+HEADERS_CLEANUP = [KEY_SCAN_DATE] + HEADERS_MISSING_TRANSLATIONS + [KEY_NOTES]
 
 HEADERS_SUMMARY = [
     KEY_DATE,

@@ -1,41 +1,48 @@
 """
-Tests for the consolidated scan sheet: the translator's reader
-(read_domain_scan_rows) and the scanner's Missing Since / Days Missing columns
-(write_domain_scan_results + get_history_first_seen), against fake worksheets.
+Tests for the consolidated scan sheet I/O: the translator's queue reader
+(read_domain_scan_rows), the scanner's queue sync (sync_domain_queue), the
+cleanup tab and the history tab (completed rows only) — against fake worksheets.
 """
 
 import sys
 import os
 
+sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
 
 import config
 import io_google_spreadsheet as gs
+from fake_sheet import FakeWorksheet
 
 HEADERS = config.HEADERS_MISSING_TRANSLATIONS
+DOMAIN = "blog.aspose.com"
+SCAN = "2026-11-18T00:00:00+00:00"
 
 
-def _scan_row(slug, issue="MISSING", langs="ar, de"):
-    return ["blog.aspose.com", "medical", slug, f"blog.aspose.com/medical/{slug}/", "Author",
-            issue, str(len(langs.split(","))), langs, "Translate", ""]
+def _scan_row(slug, issue="MISSING", langs="ar, de", status=""):
+    return [DOMAIN, "medical", slug, f"{DOMAIN}/medical/{slug}/", "Author",
+            issue, str(len(langs.split(","))), langs, config.ISSUE_ACTIONS[issue], status]
 
 
-class FakeWorksheet:
-    def __init__(self, rows=None):
-        self.rows = [list(r) for r in (rows or [])]
-        self.written = None
+def finding(slug, issue="MISSING", langs="ar, de", notes=""):
+    return dict(zip(HEADERS + ["Notes"], _scan_row(slug, issue, langs) + [notes]))
 
-    def get_all_values(self):
-        return [list(r) for r in self.rows]
 
-    def clear(self):
-        self.rows = []
+def queue_values(*rows, header=config.HEADERS_QUEUE):
+    """Queue tab values from dict rows (missing columns blank)."""
+    return [header] + [[str(r.get(h, "")) for h in header] for r in rows]
 
-    def update(self, values, value_input_option=None):
-        self.written = values
-        self.rows = [list(r) for r in values]
+
+def as_dicts(ws):
+    header, rows = gs.queue.from_values(ws.get_all_values())
+    return rows
+
+
+@pytest.fixture(autouse=True)
+def no_resize(monkeypatch):
+    monkeypatch.setattr(gs, "_auto_resize_columns", lambda ws: None)
 
 
 # ============================================================================
@@ -46,22 +53,28 @@ class TestReadDomainScanRows:
     def _patch(self, monkeypatch, ws):
         monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: ws)
 
-    def test_returns_translator_layout_and_scan_date(self, monkeypatch):
+    def test_returns_translator_layout_plus_priority_and_scan_date(self, monkeypatch):
         ws = FakeWorksheet([
-            gs.DOMAIN_TAB_LEAD_HEADERS + HEADERS,
-            ["2026-10-29T03:49:19+00:00", "2026-10-21", "8"] + _scan_row("p1"),
+            ["Scan Date", "Missing Since", "Days Missing", "Priority"] + HEADERS,
+            ["2026-10-29T03:49:19+00:00", "2026-10-21", "8", "Urgent"] + _scan_row("p1"),
         ])
         self._patch(monkeypatch, ws)
-        rows, scan_date = gs.read_domain_scan_rows("blog.aspose.com")
-        assert rows == [_scan_row("p1")]
+        rows, scan_date = gs.read_domain_scan_rows(DOMAIN)
+        assert rows == [_scan_row("p1") + ["Urgent"]]
         assert scan_date.startswith("2026-10-29T03:49")
 
-    def test_columns_found_by_name_not_position(self, monkeypatch):
-        # Older tab layout: only Scan Date in front
+    def test_old_tab_without_priority_reads_blank_priority(self, monkeypatch):
         ws = FakeWorksheet([["Scan Date"] + HEADERS, ["2026-10-29"] + _scan_row("p1")])
         self._patch(monkeypatch, ws)
-        rows, _ = gs.read_domain_scan_rows("blog.aspose.com")
-        assert rows == [_scan_row("p1")]
+        rows, _ = gs.read_domain_scan_rows(DOMAIN)
+        assert rows == [_scan_row("p1") + [""]]
+
+    def test_columns_found_by_name_not_position(self, monkeypatch):
+        header = ["Priority", "Notes"] + HEADERS[::-1]
+        ws = FakeWorksheet([header, ["Low", "n"] + _scan_row("p1")[::-1]])
+        self._patch(monkeypatch, ws)
+        rows, _ = gs.read_domain_scan_rows(DOMAIN)
+        assert rows == [_scan_row("p1") + ["Low"]]
 
     def test_order_preserved_and_blank_rows_skipped(self, monkeypatch):
         ws = FakeWorksheet([
@@ -71,65 +84,177 @@ class TestReadDomainScanRows:
             ["d"] + _scan_row("second"),
         ])
         self._patch(monkeypatch, ws)
-        rows, _ = gs.read_domain_scan_rows("blog.aspose.com")
+        rows, _ = gs.read_domain_scan_rows(DOMAIN)
         assert [r[2] for r in rows] == ["first", "second"]
 
     def test_manual_split_rows_kept_separate_in_order(self, monkeypatch):
-        # A post split by hand (e.g. try 2 languages first) stays split, so a
-        # limit=1 run picks only the first part.
         ws = FakeWorksheet([
             ["Scan Date"] + HEADERS,
             ["d"] + _scan_row("split", langs="ar, cs"),
             ["d"] + _scan_row("split", langs="de, fr"),
-            ["d"] + _scan_row("other"),
         ])
         self._patch(monkeypatch, ws)
-        rows, _ = gs.read_domain_scan_rows("blog.aspose.com")
-        assert [(r[2], r[7]) for r in rows] == [("split", "ar, cs"), ("split", "de, fr"), ("other", "ar, de")]
+        rows, _ = gs.read_domain_scan_rows(DOMAIN)
+        assert [(r[2], r[7]) for r in rows] == [("split", "ar, cs"), ("split", "de, fr")]
 
     def test_empty_tab_means_nothing_to_do(self, monkeypatch):
         self._patch(monkeypatch, FakeWorksheet([["Scan Date"] + HEADERS]))
-        assert gs.read_domain_scan_rows("blog.aspose.com") == ([], "")
+        assert gs.read_domain_scan_rows(DOMAIN) == ([], "")
 
-    def test_unreadable_tab_returns_none_for_fallback(self, monkeypatch):
+    def test_unreadable_tab_returns_none(self, monkeypatch):
         self._patch(monkeypatch, None)
-        assert gs.read_domain_scan_rows("blog.aspose.com") == (None, "")
+        assert gs.read_domain_scan_rows(DOMAIN) == (None, "")
 
     def test_missing_required_column_returns_none(self, monkeypatch):
         self._patch(monkeypatch, FakeWorksheet([["Scan Date", "Domain"]]))
-        assert gs.read_domain_scan_rows("blog.aspose.com") == (None, "")
+        assert gs.read_domain_scan_rows(DOMAIN) == (None, "")
 
 
 # ============================================================================
-# write_domain_scan_results + get_history_first_seen
+# sync_domain_queue
 # ============================================================================
 
-class TestMissingSince:
-    def test_domain_tab_gets_missing_since_and_days(self, monkeypatch):
-        ws = FakeWorksheet()
-        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: ws)
-        monkeypatch.setattr(gs, "_auto_resize_columns", lambda ws: None)
+class TestSyncDomainQueue:
+    @pytest.fixture
+    def tabs(self, monkeypatch):
+        tabs = {"queue": FakeWorksheet([config.HEADERS_QUEUE]),
+                "history": FakeWorksheet([gs.HISTORY_HEADERS])}
+        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: tabs["queue"])
+        monkeypatch.setattr(gs, "_get_history_worksheet", lambda: tabs["history"])
+        return tabs
 
-        first_seen = {("old-post", "MISSING"): "2026-10-21T02:49:09+00:00"}
-        ok = gs.write_domain_scan_results(
-            "blog.aspose.com", "2026-10-29T03:49:19+00:00",
-            [_scan_row("old-post"), _scan_row("new-post")], HEADERS, first_seen=first_seen)
+    def test_first_scan_fills_the_queue(self, tabs):
+        res = gs.sync_domain_queue(DOMAIN, [finding("a"), finding("b", "OUTDATED", "fr")], SCAN)
+        assert res["ok"] and res["new"] == 2 and res["open"] == 2 and res["closed"] == 0
+        assert res["url"].endswith("#gid=7")
+        rows = as_dicts(tabs["queue"])
+        assert [(r["Blog Post Directory"], r["Priority"]) for r in rows] == [("a", "High"), ("b", "Low")]
 
-        assert ok
-        assert ws.written[0][:4] == ["Scan Date", "Missing Since", "Days Missing", "Domain"]
-        assert ws.written[1][:3] == ["2026-10-29T03:49:19+00:00", "2026-10-21", "8"]
-        assert ws.written[2][:3] == ["2026-10-29T03:49:19+00:00", "2026-10-29", "0"]   # first seen today
+    def test_written_raw_so_comments_never_become_formulas(self, tabs):
+        gs.sync_domain_queue(DOMAIN, [finding("a")], SCAN)
+        assert {opt for m, _, opt in tabs["queue"].calls if m == "update"} == {"RAW"}
 
-    def test_first_seen_uses_open_history_rows_only(self, monkeypatch):
-        hist = FakeWorksheet([
-            gs.HISTORY_HEADERS,
-            ["2026-09-01", "blog.aspose.com", "medical", "p", "u", "A", "MISSING", "ar", "1", "completed", "2026-09-05", ""],
-            ["2026-10-21", "blog.aspose.com", "medical", "p", "u", "A", "MISSING", "ar", "1", "pending", "", ""],
-            ["2026-10-22", "blog.aspose.cloud", "email", "q", "u", "A", "MISSING", "ar", "1", "pending", "", ""],
-        ])
-        monkeypatch.setattr(gs, "_get_history_worksheet", lambda: hist)
-        assert gs.get_history_first_seen("blog.aspose.com") == {("p", "MISSING"): "2026-10-21"}
+    def test_closed_rows_move_to_history_and_leave_the_queue(self, tabs):
+        tabs["queue"].rows = queue_values(
+            {"Missing Since": "2026-11-01", "Domain": DOMAIN, "Product": "medical",
+             "Blog Post Directory": "done", "Issue": "MISSING", "Target Translations": "ar",
+             "Comments": "- ✅ Translated 1/1", "Priority": "High", "Source": "Scanner"},
+            {"Missing Since": "2026-11-02", "Domain": DOMAIN, "Product": "medical",
+             "Blog Post Directory": "a", "Issue": "MISSING", "Target Translations": "ar, de"})
+        res = gs.sync_domain_queue(DOMAIN, [finding("a")], SCAN)
+        assert res["closed"] == 1
+        assert [r["Blog Post Directory"] for r in as_dicts(tabs["queue"])] == ["a"]
+        (hist,) = as_dicts(tabs["history"])
+        assert hist["Blog Post Directory"] == "done" and hist["Status"] == "completed"
+        assert hist["Scan Date"] == "2026-11-01"            # first flagged
+        assert hist["Completed Date"] == SCAN
+        assert hist["Comments"] == "- ✅ Translated 1/1" and hist["Source"] == "Scanner"
 
-    def test_days_between_handles_bad_dates(self):
-        assert gs._days_between("", "2026-10-29") == ""
-        assert gs._days_between("2026-10-21", "2026-10-29T03:00:00+00:00") == "8"
+    def test_leftover_rows_below_are_blanked(self, tabs):
+        tabs["queue"].rows = queue_values(*[
+            {"Domain": DOMAIN, "Product": "medical", "Blog Post Directory": s, "Issue": "MISSING",
+             "Target Translations": "ar"} for s in ("x", "y", "z")])
+        gs.sync_domain_queue(DOMAIN, [], SCAN)
+        assert tabs["queue"].get_all_values() == [config.HEADERS_QUEUE]
+
+    def test_people_added_columns_are_kept(self, tabs):
+        header = ["Owner"] + config.HEADERS_QUEUE
+        tabs["queue"].rows = queue_values(
+            {"Owner": "Sam", "Domain": DOMAIN, "Product": "medical", "Blog Post Directory": "a",
+             "Issue": "MISSING", "Target Translations": "ar, de"}, header=header)
+        gs.sync_domain_queue(DOMAIN, [finding("a")], SCAN)
+        assert tabs["queue"].get_all_values()[0][0] == "Owner"
+        assert as_dicts(tabs["queue"])[0]["Owner"] == "Sam"
+
+    def test_old_format_tab_gets_the_new_columns(self, tabs):
+        tabs["queue"].rows = [["Scan Date"] + HEADERS, ["d"] + _scan_row("a")]
+        gs.sync_domain_queue(DOMAIN, [finding("a")], SCAN)
+        header = tabs["queue"].get_all_values()[0]
+        assert {"Priority", "Source", "Missing Since", "Comments"} <= set(header)
+
+    def test_groupdocs_com_closed_rows_are_dropped_not_historied(self, tabs, monkeypatch):
+        tabs["queue"].rows = queue_values(
+            {"Domain": "blog.groupdocs.com", "Product": "viewer", "Blog Post Directory": "done",
+             "Issue": "MISSING", "Target Translations": "ar"})
+        res = gs.sync_domain_queue("blog.groupdocs.com", [], SCAN)
+        assert res["closed"] == 1
+        assert tabs["history"].get_all_values() == [gs.HISTORY_HEADERS]
+
+    def test_unreadable_queue_reports_not_ok(self, monkeypatch):
+        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: None)
+        assert gs.sync_domain_queue(DOMAIN, [finding("a")], SCAN)["ok"] is False
+
+    def test_write_failure_reports_not_ok_and_keeps_the_tab(self, tabs, monkeypatch):
+        tabs["queue"].rows = queue_values({"Domain": DOMAIN, "Product": "medical",
+                                           "Blog Post Directory": "a", "Issue": "MISSING",
+                                           "Target Translations": "ar"})
+        before = tabs["queue"].get_all_values()
+
+        def boom(*a, **k):
+            raise RuntimeError("quota")
+        monkeypatch.setattr(tabs["queue"], "update", boom)
+        assert gs.sync_domain_queue(DOMAIN, [], SCAN)["ok"] is False
+        assert tabs["queue"].get_all_values() == before
+
+
+# ============================================================================
+# cleanup tab
+# ============================================================================
+
+class TestCleanupTab:
+    @pytest.fixture
+    def ws(self, monkeypatch):
+        ws = FakeWorksheet([config.HEADERS_CLEANUP,
+                            ["old", "blog.aspose.cloud"] + _scan_row("keep", "EXTRA", "tmp")[1:] + ["n"],
+                            ["old"] + _scan_row("stale", "EXTRA", "tmp") + ["n"]])
+        monkeypatch.setattr(gs, "_get_or_create_tab", lambda title, header, rows=1000: ws)
+        return ws
+
+    def test_replaces_only_this_domains_rows(self, ws):
+        assert gs.replace_cleanup_rows(DOMAIN, [finding("new", "EXTRA", "cs")], SCAN)
+        rows = as_dicts(ws)
+        assert [(r["Domain"], r["Blog Post Directory"]) for r in rows] == [
+            ("blog.aspose.cloud", "keep"), (DOMAIN, "new")]
+        assert rows[1]["Scan Date"] == SCAN
+
+    def test_read_cleanup_rows_for_one_domain(self, ws, monkeypatch):
+        class Sheet:
+            def worksheet(self, title):
+                return ws
+        monkeypatch.setattr(gs, "_open_scan_sheet", lambda: Sheet())
+        assert gs.read_cleanup_rows(DOMAIN) == [_scan_row("stale", "EXTRA", "tmp")]
+
+    def test_read_cleanup_rows_without_tab(self, monkeypatch):
+        import gspread
+
+        class Sheet:
+            def worksheet(self, title):
+                raise gspread.exceptions.WorksheetNotFound(title)
+        monkeypatch.setattr(gs, "_open_scan_sheet", lambda: Sheet())
+        assert gs.read_cleanup_rows(DOMAIN) == []
+
+
+# ============================================================================
+# history tab
+# ============================================================================
+
+class TestHistoryTab:
+    def test_append_maps_columns_by_name(self, monkeypatch):
+        ws = FakeWorksheet([["Domain", "Scan Date", "Status", "Mine"]])
+        monkeypatch.setattr(gs, "_get_history_worksheet", lambda: ws)
+        assert gs.append_history_rows(DOMAIN, [{"Domain": DOMAIN, "Missing Since": "2026-11-01",
+                                                "Status": "completed"}])
+        assert ws.get_all_values()[1] == [DOMAIN, "2026-11-01", "completed", ""]
+        assert ws.calls[-1] == ("append_rows", None, "RAW")
+
+    def test_append_never_raises(self, monkeypatch):
+        def boom():
+            raise RuntimeError("down")
+        monkeypatch.setattr(gs, "_get_history_worksheet", boom)
+        assert gs.append_history_rows(DOMAIN, [{"Domain": DOMAIN}]) is False
+
+    def test_ensure_history_columns_adds_priority_and_source(self):
+        ws = FakeWorksheet([gs.HISTORY_HEADERS[:-2]], col_count=13)
+        gs._ensure_history_columns(ws)
+        assert ws.row_values(1) == gs.HISTORY_HEADERS
+        assert ws.col_count == 15

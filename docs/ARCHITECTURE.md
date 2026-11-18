@@ -40,9 +40,11 @@ One agent. Four pipeline steps. Two implementation directories.
 
 | Component | File | Responsibility |
 |-----------|------|----------------|
-| Scanner | `scan_missing_translations.py` | Walks blog repos (skipping drafts and folders without `index.md`), finds missing `index.{lang}.md` files, extra/junk files and translations whose `index.md` was committed after them; writes one row per (post, issue) — `MISSING`/`Translate`, `EXTRA`/`Delete`, `OUTDATED`/`Retranslate` — with a `Notes` reason to Google Sheets. See [ORCHESTRATION.md — Step 1](ORCHESTRATION.md#step-1--scan-consolidated-scan-sheet) |
+| Scanner | `scan_missing_translations.py` | Walks blog repos (skipping drafts and folders without `index.md`), finds missing `index.{lang}.md` files, extra/junk files and translations whose `index.md` was committed after them; writes one row per (post, issue) — `MISSING`/`Translate`, `EXTRA`/`Delete`, `OUTDATED`/`Retranslate` — with a `Notes` reason, and **reconciles** them into the persistent queue (the domain tab: fixed languages removed, closed rows moved to `history`, new findings added at the bottom; EXTRA rows to the `cleanup` tab). See [ORCHESTRATION.md — Step 1](ORCHESTRATION.md#step-1--scan-consolidated-scan-sheet) |
+| Queue logic | `scan_queue.py` | Pure reconcile rules for the persistent queue (no sheet access): per-language row shrinking / closing, new rows, priorities, open/held Status, column merging |
+| Queue reset | `reset_scan_queue.py` | One-time, by hand (18 Nov 2026): backs up tabs, deletes non-completed and blog.groupdocs.com history rows, clears domain + cleanup tabs (dry run unless `--apply`) |
 | Scan helpers | `scan_helpers.py` | Front matter reading (`utf-8-sig`, front matter block only), one-pass `git log` of a blog's content (`last_commits()`), the OUTDATED rule (`outdated_langs()`) and the Notes texts |
-| Orchestrator | `translator.py` — `TranslationOrchestrator` | Coordinates the translation workflow, manages agents and token tracking; translates `MISSING` rows and overwrites files for `OUTDATED` rows (MISSING rows always first); also deletes junk files flagged by `EXTRA`-issue rows (`delete_extra_files()`) |
+| Orchestrator | `translator.py` — `TranslationOrchestrator` | Coordinates the translation workflow, manages agents and token tracking; translates `MISSING` rows and overwrites files for `OUTDATED` rows; open queue rows only, by Priority (Urgent, High, Normal, Low — defaults MISSING High, OUTDATED Low), then sheet order; also deletes junk files flagged by `EXTRA`-issue rows (`delete_extra_files()`) |
 | Frontmatter Agent | `translator.py` — `FrontmatterTranslatorAgent` | Translates YAML front matter; protects product names, updates URL with lang prefix |
 | Content Agent | `translator.py` — `ContentTranslatorAgent` | Translates Markdown body in chunks; preserves code blocks and shortcodes; 3-retry logic |
 | Platform Agent | `translator.py` — `PlatformIdentifierAgent` | Identifies the programming platform (.NET, Java, Python, …) to improve translation context |
@@ -69,8 +71,8 @@ One agent. Four pipeline steps. Two implementation directories.
 | Service | Used by | Credential |
 |---------|---------|------------|
 | LLM API (`PROFESSIONALIZE_BASE_URL`) | Translation Agent, Quality Validator, Quality Retranslator | `PROFESSIONALIZE_API_KEY` |
-| Google Sheets — per-domain scan sheets | Scanner, Translator | `GOOGLE_CREDENTIALS_JSON_SK` |
-| Google Sheets — consolidated scan sheet | Scanner (`write_domain_scan_results`, `update_history_tab`) | `GOOGLE_SERVICE_ACCOUNT_JSON` |
+| Google Sheets — summary sheet (and quality sheets) | Scanner summary, Quality pipeline | `GOOGLE_CREDENTIALS_JSON_SK` |
+| Google Sheets — consolidated scan sheet (domain tabs = queue, `cleanup`, `history`) | Scanner (`sync_domain_queue`, `replace_cleanup_rows`, `append_history_rows`), Translator (`read_domain_scan_rows`, `read_cleanup_rows`, `append_queue_comments`) | `GOOGLE_SERVICE_ACCOUNT_JSON` |
 | GitHub (6 blog repos) | `git_repo_utils.py` | `PAT_GITHUB_SK` |
 | Metrics REST API (`https://metrics-api.aspose.app/agents`) | `utils.py` | `METRICS_API_KEY` |
 | Google Apps Script webhook (team) | `utils.py` | `METRICS_TOKEN_TEAM` |
@@ -83,7 +85,7 @@ One agent. Four pipeline steps. Two implementation directories.
                      ┌──────────────┐
                      │ Google Sheet │  ← scan results / quality scores
                      └──────┬───────┘
-                            │ read pending rows
+                            │ read open queue rows (by Priority)
                             ▼
                translator.py / quality_*.py
                             │

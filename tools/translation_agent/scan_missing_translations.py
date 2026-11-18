@@ -17,7 +17,7 @@ from openpyxl.styles import Font, Alignment
 from datetime import datetime
 from git import Repo
 from git_repo_utils import clone_or_pull_repos
-from io_google_spreadsheet import write_to_google_spreadsheet, write_domain_scan_results, update_history_tab, get_history_first_seen
+from io_google_spreadsheet import write_to_google_spreadsheet, sync_domain_queue, replace_cleanup_rows
 from translation_files_managers import delete_translation_files
 from translator import start_translation
 from scan_helpers import (read_post_meta, git_history, outdated_langs,
@@ -182,7 +182,6 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
     for domain in domains:
         local_repo_path = config.domains_data[domain][config.KEY_LOCAL_GITHUB_REPO]
         valid_extensions = config.domains_data[domain][config.KEY_SUPPORTED_LANGS]
-        sheet_id = config.domains_data[domain][config.KEY_SHEET_ID]
 
         # print(f"{domain} ->\n\tSheet ID: {sheet_id}\n\tSupported Langs: {valid_extensions}\n\tRepo: {local_repo_path}\n")
 
@@ -214,115 +213,70 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             
             handles_list = config.domains_data[domain][config.KEY_MENTIONS_AUTHOR]
 
-            converted_result = []
-            outdated_rows    = []     # (index.md commit time, row) — sorted newest first below
+            findings         = []     # MISSING / OUTDATED, one dict per (post, issue) — reconciled into the queue
+            outdated_rows    = []     # (index.md commit time, finding) — sorted newest first below
+            extra_rows       = []     # EXTRA → the cleanup tab
             missing_or_extra = 0      # posts with a MISSING/EXTRA issue (summary count)
-            if result:
-                for item in result:
-                    base_fields = [
-                        domain,
-                        item[config.KEY_PRODUCT_NAME],
-                        item[config.KEY_DIR_BASE],
-                        (f"{domain}{item[config.KEY_POST_URL]}"),
-                        item[config.KEY_AUTHOR],
-                    ]
+            for item in result:
+                base = {
+                    config.KEY_DOMAIN       : domain,
+                    config.KEY_PRODUCT_NAME : item[config.KEY_PRODUCT_NAME],
+                    config.KEY_DIR_BASE     : item[config.KEY_DIR_BASE],
+                    config.KEY_POST_URL     : f"{domain}{item[config.KEY_POST_URL]}",
+                    config.KEY_AUTHOR       : item[config.KEY_AUTHOR],
+                }
 
-                    if item[config.KEY_MISSING_COUNT] > 0:
-                        converted_result.append(base_fields + [
-                            config.ISSUE_MISSING,
-                            item[config.KEY_MISSING_COUNT],
-                            ", ".join(item[config.KEY_MISSING_FILES]),  # Convert list to string
-                            config.ACTION_TRANSLATE,
-                            "",  # Status column, can be filled manually later
-                            item[KEY_ROW_NOTES].get(config.ISSUE_MISSING, ""),
-                        ])
+                def finding(issue, langs):
+                    return {**base,
+                            config.KEY_ISSUE         : issue,
+                            config.KEY_MISSING_COUNT : str(len(langs)),
+                            config.KEY_MISSING_FILES : ", ".join(langs),
+                            config.KEY_ACTION        : config.ISSUE_ACTIONS[issue],
+                            config.KEY_NOTES         : item[KEY_ROW_NOTES].get(issue, "")}
 
-                    if item[config.KEY_EXTRA_COUNT] > 0:
-                        converted_result.append(base_fields + [
-                            config.ISSUE_EXTRA,
-                            item[config.KEY_EXTRA_COUNT],
-                            ", ".join(item[config.KEY_EXTRA_FILES]),  # Convert list to string
-                            config.ACTION_DELETE,
-                            "",  # Status column, can be filled manually later
-                            item[KEY_ROW_NOTES].get(config.ISSUE_EXTRA, ""),
-                        ])
+                if item[config.KEY_MISSING_COUNT] > 0:
+                    findings.append(finding(config.ISSUE_MISSING, item[config.KEY_MISSING_FILES]))
+                if item[config.KEY_EXTRA_COUNT] > 0:
+                    extra_rows.append(finding(config.ISSUE_EXTRA, item[config.KEY_EXTRA_FILES]))
+                if item[KEY_OUTDATED_FILES]:
+                    outdated_rows.append((item[KEY_SOURCE_COMMIT_TIME],
+                                          finding(config.ISSUE_OUTDATED, item[KEY_OUTDATED_FILES])))
 
-                    if item[KEY_OUTDATED_FILES]:
-                        outdated_rows.append((item[KEY_SOURCE_COMMIT_TIME], base_fields + [
-                            config.ISSUE_OUTDATED,
-                            len(item[KEY_OUTDATED_FILES]),
-                            ", ".join(item[KEY_OUTDATED_FILES]),
-                            config.ACTION_RETRANSLATE,
-                            "",  # Status column, can be filled manually later
-                            item[KEY_ROW_NOTES].get(config.ISSUE_OUTDATED, ""),
-                        ]))
+                missing_translations_stats.items_discovered += item[config.KEY_MISSING_COUNT]
 
-                    missing_translations_stats.items_discovered += item[config.KEY_MISSING_COUNT]
+                # Authors are mentioned for missing/extra translations only —
+                # an outdated translation (English edited later) isn't theirs to fix
+                if not (item[config.KEY_MISSING_COUNT] or item[config.KEY_EXTRA_COUNT]):
+                    continue
+                missing_or_extra += 1
 
-                    # Authors are mentioned for missing/extra translations only —
-                    # an outdated translation (English edited later) isn't theirs to fix
-                    if not (item[config.KEY_MISSING_COUNT] or item[config.KEY_EXTRA_COUNT]):
-                        continue
-                    missing_or_extra += 1
+                person = item[config.KEY_AUTHOR].strip().lower()
+                official_handle = config.DEV_NORMALIZED.get(person) if person else None
 
-                    person = item[config.KEY_AUTHOR].strip().lower()
-                    official_handle = config.DEV_NORMALIZED.get(person) if person else None
-
-                    if official_handle:
-                        if official_handle not in handles_list:
-                            handles_list.append(official_handle)
-                    else:
-                        print(f"\n⚠️ Handle not found for: {person or '(no author in index.md)'}")
-
-                # MISSING/EXTRA rows by post folder (column C); OUTDATED rows after
-                # them, most recently edited English first — Step 2 works top-down.
-                converted_result.sort(key=lambda x: x[2])
-                outdated_rows.sort(key=lambda t: (-t[0], t[1][2]))
-                converted_result += [row for _, row in outdated_rows]
-                print(f"{len(outdated_rows)} outdated  >  ", end=' ', flush=True)
-
-            else:
-                converted_result.append(["", "!!! NO MISSING TRANSLATION FOUND !!!"])
-
-            # --- Write to consolidated scan sheet ---
-            # History first, so the domain tab can show each post's
-            # "Missing Since" (first scan that flagged it) from the history tab.
-            update_history_tab(
-                domain       = domain,
-                scan_date    = scan_date,
-                current_rows = converted_result if result else [],
-            )
-            write_domain_scan_results(
-                domain     = domain,
-                scan_date  = scan_date,
-                rows       = converted_result if result else [],
-                headers    = config.HEADERS_SCAN_RESULTS,
-                first_seen = get_history_first_seen(domain),
-            )
-
-            max_retries = 3
-            # generate random delay between 2 to 5 seconds
-            retry_delay = random.randint(2, 6)
-
-            sheet_link = None
-
-            for attempt in range(max_retries):
-                if config.PRODUCTION_ENV:
-                    sheet_link = write_to_google_spreadsheet(sheet_id, valid_extensions, config.HEADERS_SCAN_RESULTS, converted_result)
+                if official_handle:
+                    if official_handle not in handles_list:
+                        handles_list.append(official_handle)
                 else:
-                    sheet_link = write_to_google_spreadsheet(config.SHEET_ID_TEST_QA, valid_extensions, config.HEADERS_SCAN_RESULTS, converted_result, f"{domain}-{current_date}")
+                    print(f"\n⚠️ Handle not found for: {person or '(no author in index.md)'}")
 
-                if sheet_link:
-                    print(f"✅ Scan results written to sheet.")
-                    break  # Success! Exit loop
-                else:
-                    print(f"Attempt {attempt + 1} failed. Retrying in {retry_delay}s...")
-                    time.sleep(retry_delay)
+            # New queue rows are added in this order: MISSING by post folder, then
+            # OUTDATED, most recently edited English first. Existing rows keep
+            # their place; Step 2 orders by Priority, then sheet order.
+            findings.sort(key=lambda f: f[config.KEY_DIR_BASE])
+            outdated_rows.sort(key=lambda t: (-t[0], t[1][config.KEY_DIR_BASE]))
+            findings += [f for _, f in outdated_rows]
+            extra_rows.sort(key=lambda f: f[config.KEY_DIR_BASE])
+            print(f"{len(outdated_rows)} outdated  >  ", end=' ', flush=True)
 
-            if sheet_link:
+            # --- Reconcile the queue (domain tab); closed rows move to history ---
+            synced = sync_domain_queue(domain, findings, scan_date)
+            replace_cleanup_rows(domain, extra_rows, scan_date)
+            sheet_link = synced["url"]
+
+            if synced["ok"]:
                 missing_translations_stats.items_succeeded = missing_translations_stats.items_discovered
             else:
-                print("Failed to write to spreadsheet after multiple attempts.")
+                print("❌ Queue not updated — see the error above.")
                 missing_translations_stats.items_failed = missing_translations_stats.items_discovered
 
 
@@ -368,7 +322,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                 print(f"args: {safe_args}")
                 print(f"Translating Missing Files for: {domain}...")
                 print("✅ == AUTO TRANSLATION TEMPORARILY PAUSED == ✅")
-                # start_translation(args, posts_list_to_translate=converted_result)
+                # start_translation(args)   # Step 2 reads the queue (domain tab) itself
             else:
                 print("✅ == Scanning COMPLETED == ✅")
                 print("❌ == AUTO TRANSLATION NOT REQUESTED == ❌")

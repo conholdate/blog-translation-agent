@@ -71,63 +71,97 @@ A post with several issues produces one row per issue.
   `seoTitle`, `description`, `summary` and paragraphs of ~3 posts a day and adds `lastmod`, touching
   `index.md` only — real content changes that the translations must follow.
 
-### Row order and summary
+### The queue — a persistent domain tab (since 18 Nov 2026)
 
-- MISSING/EXTRA rows first, sorted by post folder; then OUTDATED rows, **most recent English edit
-  first**. Step 2 works top-down, so new posts are never behind the retranslation backlog.
+The domain tab of the consolidated scan sheet is the **translation queue**. Until 18 Nov 2026 it
+was cleared and rewritten on every scan, which wiped everything people did on it (row splits,
+ordering, Status) and made rows that a scan can't see (manual additions) impossible. Each scan now
+**reconciles** the tab instead (`scan_queue.reconcile()`, pure logic; sheet I/O in
+`io_google_spreadsheet.sync_domain_queue()`).
+
+What goes in the queue:
+
+| Issue | Who adds it | Priority (default) | Closed when |
+|---|---|---|---|
+| `MISSING` | scanner | **High** | the scan no longer finds the language missing |
+| `ISSUE` | a person or an agent (manual rows) | **Normal** | Step 2 has retranslated its languages (Phase 2) |
+| `OUTDATED` | scanner (any English commit — optimizer agent or a person; the commit author is in Notes) | **Low** | the retranslation is committed (translation newer than `index.md`) |
+| any | — | **Urgent** — set by people only | — |
+
+`EXTRA` rows (junk files) are **not** queue rows: they go to the shared `cleanup` tab (below).
+
+**Reconcile rules (per scan):**
+
+| Queue row | Result |
+|---|---|
+| MISSING/OUTDATED row, all its languages still flagged | kept as is; Scan Date, Days Missing, Notes, URL, Author refreshed |
+| … some languages no longer flagged | those languages removed, Count updated, Status `partial` |
+| … no language left | **closed**: removed from the queue and appended to `history` as `completed` |
+| flagged languages no open row tracks | **new row at the bottom** (Priority by issue, Source `Scanner`, Missing Since = today) |
+| ISSUE row (or any issue the scan can't see) | left alone; blank Priority / Source / Action / Missing Since are filled in |
+| row with Status other than blank / `pending` / `partial` (e.g. `hold`, `invalid`) | left alone, never closed, and still counts as tracking its languages, so no duplicate is added behind it |
+| blank rows, old `!!! NO MISSING TRANSLATION FOUND !!!` placeholder | dropped |
+
+- Rows are matched by **(domain, product, post folder, issue)** and language — never by row
+  number. A post split by hand over several rows stays split; each part shrinks on its own.
+- **Kept from people:** row order, row splits, Priority, Status, Source, Comments, and any extra
+  column (columns are found by name; missing ones are appended).
+- New rows are added in this order: MISSING by post folder, then OUTDATED **most recent English edit
+  first**. Existing rows keep their place.
+- **Missing Since** is set when the row is first flagged and never changed; `Days Missing` is
+  recomputed each scan. For rows that existed before 18 Nov 2026 it starts at the reset date (the old
+  first-seen dates and comments were dropped on purpose — not needed by the owner).
+- Writes go **from A1 first, then blank the leftover rows below** (`_write_tab`), so a failed write
+  never leaves an empty queue. Values are written `RAW` (Comments start with `- ` and must never be
+  parsed as formulas) — so the queue tab shouldn't hold formulas: they'd be kept as their values.
 - Author handles (summary mentions) and the summary's folder count / send-email flag count only
   posts with MISSING or EXTRA issues — an outdated translation isn't the post author's to fix.
 - Metrics `items_discovered` counts missing languages only (unchanged).
 
 ### Where results are written
 
-**1. Domain tab** of the consolidated scan sheet (`TRANSLATION_SCAN_SHEET_ID`, tab named by domain)
-- Cleared and rewritten on each scan — always shows current issues only.
-- Columns: Scan Date, Missing Since, Days Missing, Domain, Product, Blog Post Directory, Blog Post
-  URL, Author, Issue, Count, Target Translations, Action, Status, **Notes**.
-- `Missing Since` = first scan that flagged the (post, issue), from the history tab.
-- `config.HEADERS_SCAN_RESULTS` (= `HEADERS_MISSING_TRANSLATIONS` + `Notes`) is what the scanner
-  writes. Step 2 reads `HEADERS_MISSING_TRANSLATIONS` **by column name** and ignores Notes, so tabs
-  written before Notes existed still work.
+**1. Domain tab = the queue** (`TRANSLATION_SCAN_SHEET_ID`, tab named by domain), columns
+(`config.HEADERS_QUEUE`): Scan Date, Missing Since, Days Missing, **Priority**, Domain, Product,
+Blog Post Directory, Blog Post URL, Author, Issue, Count, Target Translations, Action, Status,
+**Source**, Notes, **Comments**.
 
-**2. Old per-domain sheet** (first tab, same columns without the lead dates) — still written; Step 2
-reads it only if the consolidated tab can't be read.
+| Status | Meaning |
+|---|---|
+| blank / `pending` / `partial` | open — Step 2 works on it |
+| `invalid` | a manual row the scanner can't match (reason in Notes) — Phase 2 |
+| anything else (e.g. `hold`) | skipped by Step 2 and never closed by the scan, until cleared |
 
-**3. History tab** (never cleared)
-- Columns: Scan Date, Domain, Product, Blog Post Directory, Blog Post URL, Author, Issue, Target
-  Translations, Count, Status, Completed Date, Comments, **Notes**.
-- One row per (post, issue) detection, keyed by `(domain, slug, issue)` — MISSING, EXTRA and
-  OUTDATED lifecycles of the same post are tracked independently.
-- Status lifecycle: `pending` → `partial` → `completed`.
-- `Comments` — Step 2's per-run results (see Step 2). `Notes` — the scanner's reason, refreshed on
-  every open row each scan (e.g. a newer English edit) and kept on completed rows.
-- Missing columns (Comments, Notes) are added to an existing tab automatically
-  (`_ensure_history_columns`); Notes is located by header name.
-- `update_history_tab()` writes only Scan Date…Completed Date (`USER_ENTERED`) and Notes (`RAW`); it
-  **never rewrites Comments**, which start with `- ` and would be parsed as a formula if written
-  `USER_ENTERED`.
+**2. Cleanup tab** (`cleanup`, one tab for all domains, `config.HEADERS_CLEANUP`) — EXTRA rows.
+Each scan replaces that domain's rows and keeps the other domains'. Derived entirely from the repo,
+so it has no history. Step 2 deletes the files listed for its domain.
 
-**4. Summary sheet** — one row per domain per day (date, folder count, author handles, sheet link,
-send-email flag).
+**3. History tab** (`history`) — **completed rows only**. Closed queue rows are appended
+(`append_history_rows`, `RAW`) with their Comments, Notes, Priority and Source; history's
+`Scan Date` is the row's Missing Since (first flagged). Columns are mapped by name; missing ones
+(`Priority`, `Source`) are added automatically (`_ensure_history_columns`).
+**blog.groupdocs.com** keeps its queue (MISSING / OUTDATED / cleanup — reported, not translated) but
+its closed rows are dropped instead of moved (`config.NO_HISTORY_DOMAINS`), and it has no history rows.
 
-### History Tab — Completion Detection
+**4. Summary sheet** — one row per domain per day (date, folder count, author handles, **link to the
+domain's queue tab**, send-email flag).
 
-On each scan, `update_history_tab()` checks every open history row against the current scan results
-**for the same `(domain, slug, issue)` key**:
+The old **per-domain sheets are no longer written** (since 18 Nov 2026), and Step 2 no longer falls
+back to them; the summary's link points to the queue tab instead.
 
-```
-remaining = this_row_items ∩ current_scan_items_for_same_issue
-```
+### One-time reset (18 Nov 2026)
 
-| `remaining` | Meaning | Action |
-|-------------|---------|--------|
-| empty | All items in this row are resolved (translated, deleted, or retranslated) | `completed` + Completed Date = scan_date |
-| `remaining < this_row_items` | Some resolved, some still flagged | `partial` + items updated to remaining, Notes refreshed |
-| `remaining == this_row_items` | Nothing resolved | Notes refreshed if the reason changed, otherwise no write |
-| post+issue not in scan at all | Fully resolved | `completed` + Completed Date = scan_date |
+`reset_scan_queue.py` (run by hand, after the translation runs in progress have committed; dry run
+unless `--apply`):
 
-**Note:** Completion is detected on the **next scan after** the translation is committed. An OUTDATED
-row completes once the retranslation is committed (the translation is then newer than `index.md`).
+1. backs up every tab it changes as `bak-YYYYMMDD-HHMM-<tab>` in the same spreadsheet (a Drive file
+   copy isn't used — service accounts usually can't create Drive files);
+2. deletes every history row that isn't `completed` (old pending / partial rows and their comments
+   are not carried over — decided by the owner) and **every blog.groupdocs.com row**, completed or not;
+3. clears every domain tab and the cleanup tab down to the header row.
+
+The next scan rebuilds the queue (a scan against an empty queue is a rebuild): MISSING (High), then
+OUTDATED (Low), Missing Since = that day. A translation run between the reset and that scan finds an
+empty queue and does nothing.
 
 ### Options
 
@@ -141,9 +175,12 @@ row completes once the retranslation is committed (the translation is then newer
 
 ## Step 2 — Translate, Retranslate (and Delete)
 
-`start_translation()` reads the sheet once and runs two independent flows from the same read:
-`MISSING` and `OUTDATED` rows go to `TranslationOrchestrator.translate_files()`, `EXTRA` rows go to
-`TranslationOrchestrator.delete_extra_files()`. Either can run with zero rows for the other.
+`start_translation()` reads the queue (domain tab) and the domain's rows of the cleanup tab once
+and runs two independent flows from that read: `MISSING` and `OUTDATED` rows go to
+`TranslationOrchestrator.translate_files()`, `EXTRA` rows go to
+`TranslationOrchestrator.delete_extra_files()`. Either can run with zero rows for the other. If the
+queue can't be read the run fails (there is no fallback to the old per-domain sheets any more), and
+the failure alert fires.
 
 ### Entry Point
 
@@ -151,7 +188,7 @@ row completes once the retranslation is committed (the translation is then newer
 translator.py  →  start_translation()
                      ├── filter_valid_rows()   (MISSING + OUTDATED)
                      │     → drop_existing_translations()   (MISSING rows only)
-                     │     → missing_first()                 (MISSING before OUTDATED)
+                     │     → queue_order()                   (open rows, by Priority)
                      │     → limit
                      │     → TranslationOrchestrator.translate_files()
                      └── filter_extra_rows()   (EXTRA)
@@ -161,8 +198,11 @@ translator.py  →  start_translation()
 ### Queue rules
 
 - Rows are used as they are in the sheet (a post may be split by hand over several rows).
-- `missing_first()`: all MISSING rows before all OUTDATED rows, each group in sheet order — new posts
-  never wait behind the retranslation backlog. `--limit` (max 3 posts per run) counts both kinds.
+- `queue_order()`: only **open** rows (Status blank / `pending` / `partial`), sorted by Priority —
+  Urgent, High, Normal, Low; a blank or unknown Priority (e.g. a tab from before 18 Nov 2026) falls
+  back to the issue's default (MISSING High, ISSUE Normal, OUTDATED Low). Rows of the same priority
+  keep their **sheet order**, so a split post ("these 2 languages first") still runs in that order.
+  `--limit` (max 3 posts per run) counts both kinds.
 - `drop_existing_translations()` drops languages whose file already exists (stale sheet) for MISSING
   rows only; OUTDATED rows pass through, their files exist by definition.
 
@@ -170,7 +210,7 @@ translator.py  →  start_translation()
 
 | State | Description |
 |-------|-------------|
-| **Pending** | Row exists in Google Sheet with `Target Translations` populated (column 7) |
+| **Pending** | Open queue row (Status blank / `pending` / `partial`) with `Target Translations` populated (column 7) |
 | **Filtered** | Row passes `filter_valid_rows()` (Issue == MISSING or OUTDATED) or `filter_extra_rows()` (Issue == EXTRA) |
 | **In Progress** | `TranslationOrchestrator` is actively translating or deleting for the post |
 | **Translated** | `index.{lang}.md` written to `blog-checkedout-repo/content/…` (new, or overwritten for OUTDATED) |
@@ -182,12 +222,16 @@ translator.py  →  start_translation()
 
 `Target Translations` on an `EXTRA` row holds comma-separated fragments (e.g. `"cs, pl, sv"` or `"tmp"`). Each reconstructs as `index.<fragment>.md` — the same convention `translate_files` uses to write output files — and is removed with `os.remove()`. The CI workflow's generic `git add content/` → commit → push (same mechanism that commits new translations) picks up the deletion automatically; no separate git logic is needed in Python.
 
-### History comments
+### Queue comments
 
 After each post, a comment (result, failed languages, English links kept) is appended to the
-`Comments` cell of the post's open history rows **of the row's issue** (`log_post_comment(…, issue=)`
-→ `append_history_comments`), so a retranslation is logged on the OUTDATED row and a translation on
-the MISSING row. Production only; local runs print it.
+`Comments` cell of the post's **open queue rows that share a language with the run**, each row
+getting only its own languages (`log_post_comment(…, run_langs=)` → `append_queue_comments`). If no
+open row shares one, the last open row of the post gets the whole comment; a whole-post comment
+(error, draft) goes to the rows sharing the run's languages. The tab is re-read and rows are found
+by key at write time, so rows added, removed or re-sorted during the run don't matter. When the row
+is closed, its comments move with it to the history tab. Production only; local runs print it.
+(Until 18 Nov 2026 comments went to open history rows of the row's issue.)
 
 ### Committing (translate workflows)
 
@@ -213,11 +257,11 @@ the MISSING row. Production only; local runs print it.
 ```
 start_translation(domain, author, limit)
 │
-├── read_domain_scan_rows(domain)            # consolidated tab; falls back to the old sheet
+├── read_domain_scan_rows(domain)            # the queue (domain tab) + read_cleanup_rows(domain)
 ├── filter_valid_rows(posts_list)            # MISSING + OUTDATED rows with required fields
 ├── filter by author / product
 ├── drop_existing_translations()             # MISSING rows only
-├── missing_first()                          # MISSING before OUTDATED
+├── queue_order()                            # open rows, by Priority then sheet order
 ├── limit
 │
 └── TranslationOrchestrator.translate_files(posts_list)

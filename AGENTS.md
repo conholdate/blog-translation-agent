@@ -8,7 +8,7 @@ explicitly approves it in the current session (see "User-Approved Changes").
 This file is a living document: agents keep it updated with the standing instructions agreed in
 discussions with the user (see "Standing Instructions").
 
-Last updated: 2026-11-17
+Last updated: 2026-11-18
 Authority: Shoaib Khan
 
 ---
@@ -88,23 +88,30 @@ Blog Translation Agent
        MISSING → Translate (no index.{lang}.md), EXTRA → Delete (unsupported .md),
        OUTDATED → Retranslate (index.md committed after index.{lang}.md — git history;
        a fix committed to both together is not outdated; skipped without git history)
-    3. Write results to Google Sheets (OUTDATED rows last, most recent English edit first), each
-       row with a Notes reason (e.g. which English commit made it OUTDATED)
+    3. Reconcile the results into the persistent queue — the domain tab of the consolidated scan
+       sheet (scan_queue.py; never cleared since 18 Nov 2026): languages no longer flagged are
+       removed, rows with none left move to the `history` tab (completed rows only; dropped for
+       blog.groupdocs.com), new findings are added at the bottom (MISSING by folder, then
+       OUTDATED newest English edit first) with Priority MISSING High / OUTDATED Low, Source
+       Scanner and Missing Since. People's edits (row splits, Priority incl. Urgent, Status such
+       as `hold`, Comments, own columns) are kept. EXTRA rows go to the shared `cleanup` tab.
+       Each row has a Notes reason (e.g. which English commit made it OUTDATED)
 
   Step 2 — Translate
-    1. Read missing translations from the consolidated scan sheet (domain tab; falls back to the
-       old per-domain sheet if unreadable). Rows are used as-is and in order — a post may be split
-       by hand over several rows (e.g. to translate 2 languages first). MISSING rows run
-       before OUTDATED rows; OUTDATED rows overwrite the existing translation
+    1. Read the queue (domain tab) and the domain's `cleanup` rows; no fallback to the old
+       per-domain sheets (no longer written). Open rows only (Status blank / pending / partial),
+       by Priority (Urgent, High, Normal, Low; blank → issue default), then sheet order — a post
+       may be split by hand over several rows (e.g. to translate 2 languages first). OUTDATED
+       rows overwrite the existing translation
     2. Checkout target blog repo (read-only except content/)
     3. Translate English index.md → index.{lang}.md
     4. Write translated file to blog-checkedout-repo/content/...
     5. Send metrics to Google Sheets
     6. Append a per-post comment (result, failed languages, EN links kept) to the
-       "Comments" column of the scan sheet's `history` tab — production only; local runs print it.
-       A post can have several open history rows (one per language set): each row sharing a
-       language with the run gets a comment for just its own languages; whole-post comments
-       (error, draft) go to every open row; no shared language → last open row
+       "Comments" column of the post's open queue rows (moves to `history` with the row) —
+       production only; local runs print it. Each row sharing a language with the run gets a
+       comment for just its own languages; no shared language → last open row. Rows are found
+       by key at write time, never by remembered row numbers
 
   Step 3 — Quality Check
     Phase A — Scanner
@@ -184,3 +191,5 @@ with the date, and update `Last updated` above.
 | 2026-11-04 | Do not run a full Hugo build of a blog repo (it takes hours). To verify a post, build only that post in a throwaway site in a temp folder. |
 | 2026-11-17 | Document everything — no information may be lost. Every behaviour change goes into the docs in the same piece of work: `docs/` (ORCHESTRATION, ARCHITECTURE, RUNBOOK, DATA_HANDLING, PIPELINE_MAP), both READMEs, `CHANGELOG.md` and this file, including findings, numbers and decisions with their reasons. Tests are updated or added with every change. |
 | 2026-11-17 | Split work into reasonable, self-contained commits (each passing the tests), still only after the user approves. |
+| 2026-11-18 | The domain tab is a persistent translation queue: scans reconcile it, never clear it. Queue = MISSING (High), ISSUE (Normal, manual/agent), OUTDATED (Low, any English commit); `Urgent` is set by the user only and never overwritten. EXTRA goes to one shared `cleanup` tab. Closed rows move to `history`, which keeps completed rows only. |
+| 2026-11-18 | blog.groupdocs.com: keep its queue (missing / outdated / extra) but write nothing to `history` for it. |

@@ -105,9 +105,9 @@ Key variables:
 | Variable | Description |
 |----------|-------------|
 | `PROFESSIONALIZE_API_KEY` | LLM API key for translation and quality validation |
-| `GOOGLE_CREDENTIALS_JSON_SK` | Google service account for per-domain scan sheets |
+| `GOOGLE_CREDENTIALS_JSON_SK` | Google service account for the scan summary sheet and the quality sheets (the old per-domain scan sheets are no longer written; their `TRANSLATION_SCAN_SHEET_ID_<DOMAIN>` secrets are unused) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Google service account for the consolidated scan sheet |
-| `TRANSLATION_SCAN_SHEET_ID` | Consolidated scan sheet (one tab per domain + history tab) |
+| `TRANSLATION_SCAN_SHEET_ID` | Consolidated scan sheet: one tab per domain (the persistent translation queue), `cleanup` (junk files) and `history` (completed rows) |
 | `PAT_GITHUB_SK` | GitHub Personal Access Token for cloning and pushing blog repos |
 | `METRICS_API_KEY` | Production metrics API key (`https://metrics-api.aspose.app/agents`) |
 | `METRICS_WEBHOOK_URL_TEAM` / `METRICS_TOKEN_TEAM` | Team metrics webhook |
@@ -183,7 +183,7 @@ Scan results, translation reports, and quality scores are written to Google Shee
 
 ## 🚀 Roadmap
 
-- **Unified scan dashboard** — a single consolidated sheet with one tab per domain will drive both scanning and translation, simplifying configuration and giving a cross-domain view in one place
+- ~~**Unified scan dashboard**~~ — done: the consolidated sheet's domain tabs are the persistent translation queue for both scanning and translation (18 Nov 2026); the old per-domain sheets are no longer written
 - **Real-time translation progress** — track each post's translation status live in the scan sheet as it moves through the pipeline, rather than reflecting it on the next scan cycle
 - **Quality sheet consolidation** — bring all six per-domain quality sheets into a single sheet with domain tabs and a unified history, matching the scan sheet architecture
 - **Prompt library** — LLM prompts extracted into versioned, readable files for easier tuning and review without touching agent code

@@ -1,0 +1,185 @@
+"""
+Tests for scan_queue.reconcile() — how a scan updates the persistent queue
+(domain tab): languages fixed since the last scan are removed, empty rows are
+closed (for history), new findings are added at the bottom, and everything
+people set (row splits, Priority, Status, Comments, manual rows) is kept.
+"""
+
+import config
+import scan_queue as q
+
+DOMAIN = "blog.aspose.com"
+SCAN = "2026-11-18T00:00:00+00:00"
+M, O, I = config.ISSUE_MISSING, config.ISSUE_OUTDATED, config.ISSUE_ISSUE
+
+
+def finding(slug, issue=M, langs="de, fr", notes="", product="words"):
+    return {"Domain": DOMAIN, "Product": product, "Blog Post Directory": slug,
+            "Blog Post URL": f"{DOMAIN}/{product}/{slug}/", "Author": "Jane",
+            "Issue": issue, "Count": str(len(q.split_langs(langs))), "Target Translations": langs,
+            "Action": config.ISSUE_ACTIONS[issue], "Notes": notes}
+
+
+def qrow(slug, issue=M, langs="de, fr", product="words", **extra):
+    row = {"Scan Date": "2026-11-10T00:00:00+00:00", "Missing Since": "2026-11-01", "Days Missing": "9",
+           "Priority": config.DEFAULT_PRIORITY.get(issue, ""), "Domain": DOMAIN, "Product": product,
+           "Blog Post Directory": slug, "Blog Post URL": f"{DOMAIN}/{product}/{slug}/", "Author": "Jane",
+           "Issue": issue, "Count": str(len(q.split_langs(langs))), "Target Translations": langs,
+           "Action": config.ISSUE_ACTIONS.get(issue, ""), "Status": "", "Source": "Scanner",
+           "Notes": "", "Comments": ""}
+    row.update(extra)
+    return row
+
+
+def run(queue, findings):
+    return q.reconcile(queue, findings, SCAN)
+
+
+def slugs(rows):
+    return [(r["Blog Post Directory"], r["Issue"], r["Target Translations"]) for r in rows]
+
+
+class TestEmptyQueue:
+    def test_scan_on_empty_queue_rebuilds_it_in_finding_order(self):
+        out, closed, added = run([], [finding("a"), finding("b", O, "it", notes="English updated")])
+        assert slugs(out) == [("a", M, "de, fr"), ("b", O, "it")]
+        assert closed == [] and added == out
+
+    def test_new_row_defaults(self):
+        (row,), _, _ = run([], [finding("a", O, "it", notes="why")])
+        assert row["Priority"] == config.PRIORITY_LOW
+        assert row["Source"] == config.SOURCE_SCANNER
+        assert row["Missing Since"] == "2026-11-18" and row["Days Missing"] == "0"
+        assert row["Scan Date"] == SCAN
+        assert row["Action"] == config.ACTION_RETRANSLATE
+        assert row["Notes"] == "why" and row["Count"] == "1"
+
+    def test_missing_rows_are_high_priority(self):
+        (row,), _, _ = run([], [finding("a")])
+        assert row["Priority"] == config.PRIORITY_HIGH
+
+
+class TestExistingRows:
+    def test_unchanged_row_keeps_missing_since_and_counts_days(self):
+        (row,), closed, added = run([qrow("a")], [finding("a", notes="new reason")])
+        assert row["Missing Since"] == "2026-11-01" and row["Days Missing"] == "17"
+        assert row["Scan Date"] == SCAN
+        assert row["Notes"] == "new reason"
+        assert closed == [] and added == []
+
+    def test_fixed_languages_are_removed_and_row_marked_partial(self):
+        (row,), closed, _ = run([qrow("a", langs="de, fr, it")], [finding("a", langs="fr")])
+        assert row["Target Translations"] == "fr" and row["Count"] == "1"
+        assert row["Status"] == "partial"
+        assert closed == []
+
+    def test_row_with_nothing_left_is_closed_for_history(self):
+        out, (done,), _ = run([qrow("a", Comments="- Date: x")], [])
+        assert out == []
+        assert done["Status"] == config.STATUS_COMPLETED
+        assert done["Completed Date"] == SCAN
+        assert done["Target Translations"] == "de, fr"
+        assert done["Comments"] == "- Date: x"
+
+    def test_people_set_values_survive(self):
+        row = qrow("a", Priority="Urgent", Comments="- run 1", Source="Manual")
+        row["My Column"] = "keep me"
+        (out,), _, _ = run([row], [finding("a")])
+        assert out["Priority"] == "Urgent" and out["Comments"] == "- run 1"
+        assert out["Source"] == "Manual" and out["My Column"] == "keep me"
+
+    def test_url_and_author_refreshed_from_scan(self):
+        f = finding("a")
+        f["Author"] = "New Author"
+        (row,), _, _ = run([qrow("a")], [f])
+        assert row["Author"] == "New Author"
+
+    def test_sheet_order_is_kept_and_new_rows_go_last(self):
+        out, _, _ = run([qrow("b"), qrow("a")], [finding("a"), finding("c"), finding("b")])
+        assert [r["Blog Post Directory"] for r in out] == ["b", "a", "c"]
+
+    def test_blank_and_placeholder_rows_dropped(self):
+        placeholder = {"Domain": "", "Product": "!!! NO MISSING TRANSLATION FOUND !!!"}
+        out, closed, _ = run([placeholder, qrow("a")], [finding("a")])
+        assert slugs(out) == [("a", M, "de, fr")] and closed == []
+
+
+class TestSplitRows:
+    def test_split_rows_stay_split_and_shrink_independently(self):
+        queue = [qrow("a", langs="ar, cs"), qrow("a", langs="de, fr")]
+        out, closed, added = run(queue, [finding("a", langs="cs, de, fr")])
+        assert slugs(out) == [("a", M, "cs"), ("a", M, "de, fr")]
+        assert closed == [] and added == []
+
+    def test_one_split_row_closes_the_other_stays(self):
+        queue = [qrow("a", langs="ar, cs"), qrow("a", langs="de, fr")]
+        out, closed, _ = run(queue, [finding("a", langs="de, fr")])
+        assert slugs(out) == [("a", M, "de, fr")]
+        assert slugs(closed) == [("a", M, "ar, cs")]
+
+    def test_newly_flagged_language_gets_its_own_row(self):
+        out, _, added = run([qrow("a", langs="de")], [finding("a", langs="de, it")])
+        assert slugs(out) == [("a", M, "de"), ("a", M, "it")]
+        assert slugs(added) == [("a", M, "it")]
+
+
+class TestIssuesTrackedApart:
+    def test_missing_and_outdated_of_one_post_are_separate_rows(self):
+        out, _, _ = run([qrow("a", langs="fr")], [finding("a", langs="fr"), finding("a", O, "de")])
+        assert slugs(out) == [("a", M, "fr"), ("a", O, "de")]
+
+    def test_same_slug_in_another_product_is_another_post(self):
+        out, closed, _ = run([qrow("a", product="pdf")], [finding("a", product="words")])
+        assert [r["Product"] for r in out] == ["words"]
+        assert [r["Product"] for r in closed] == ["pdf"]
+
+    def test_issue_rows_are_left_alone_by_the_scan(self):
+        row = qrow("a", I, "fr", Source="Manual", Notes="bad tables")
+        (out,), closed, _ = run([row], [])
+        assert out["Target Translations"] == "fr" and out["Notes"] == "bad tables"
+        assert closed == []
+
+
+class TestNotOpenRows:
+    def test_held_row_is_kept_and_blocks_duplicates(self):
+        row = qrow("a", Status="hold")
+        out, closed, added = run([row], [finding("a")])
+        assert slugs(out) == [("a", M, "de, fr")] and out[0]["Status"] == "hold"
+        assert closed == [] and added == []
+
+    def test_held_row_is_not_closed_when_resolved(self):
+        out, closed, _ = run([qrow("a", Status="hold")], [])
+        assert len(out) == 1 and closed == []
+
+
+class TestManualRowsFilledIn:
+    def test_blank_priority_source_action_and_since_are_filled(self):
+        row = {"Domain": DOMAIN, "Product": "words", "Blog Post Directory": "a",
+               "Issue": I, "Target Translations": "fr"}
+        (out,), _, _ = run([row], [])
+        assert out["Priority"] == config.PRIORITY_NORMAL
+        assert out["Source"] == config.SOURCE_MANUAL
+        assert out["Action"] == config.ACTION_RETRANSLATE
+        assert out["Missing Since"] == "2026-11-18" and out["Days Missing"] == "0"
+
+
+class TestHelpers:
+    def test_priority_rank(self):
+        assert q.priority_rank({"Priority": "Urgent", "Issue": O}) == 0
+        assert q.priority_rank({"Priority": "", "Issue": M}) == 1
+        assert q.priority_rank({"Priority": "bogus", "Issue": O}) == 3
+        assert q.priority_rank({"Issue": I}) == 2
+
+    def test_is_open(self):
+        assert q.is_open({"Status": ""}) and q.is_open({"Status": "Partial"})
+        assert not q.is_open({"Status": "invalid"}) and not q.is_open({"Status": "hold"})
+
+    def test_values_round_trip_and_header_merge(self):
+        header, rows = q.from_values([["Domain", "Mine"], ["d", "x", "extra"], ["e"]])
+        assert rows == [{"Domain": "d", "Mine": "x"}, {"Domain": "e", "Mine": ""}]
+        assert q.to_values(rows, ["Mine", "Domain"]) == [["x", "d"], ["", "e"]]
+        assert q.merged_header(["Mine", "Domain"], ["Domain", "Issue"]) == ["Mine", "Domain", "Issue"]
+
+    def test_days_between(self):
+        assert q.days_between("", "2026-10-29") == ""
+        assert q.days_between("2026-10-21", "2026-10-29T03:00:00+00:00") == "8"

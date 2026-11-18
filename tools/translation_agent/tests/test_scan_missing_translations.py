@@ -194,3 +194,53 @@ class TestFixAcrossSomeLanguages:
         assert r[scanner.KEY_OUTDATED_FILES] == ["fr"]          # still retranslated
         assert r[scanner.KEY_ROW_NOTES][config.ISSUE_OUTDATED].endswith(
             "translations from 2026-01-02; same commit changed 1 of 2 translations")
+
+
+class TestQueueWrite:
+    """validate_existing_translation_files(): what is handed to the queue, cleanup and summary sheets."""
+
+    @pytest.fixture
+    def run(self, scanner, tmp_path, monkeypatch):
+        domain = config.DOMAIN_ASPOSE_COM
+        monkeypatch.setitem(config.domains_data[domain], config.KEY_LOCAL_GITHUB_REPO, str(tmp_path))
+        monkeypatch.setitem(config.domains_data[domain], config.KEY_SUPPORTED_LANGS, LANGS)
+        calls = {}
+
+        def fake_sync(d, findings, scan_date):
+            calls["queue"] = findings
+            return {"ok": True, "open": len(findings), "new": len(findings), "closed": 0,
+                    "url": "https://sheet#gid=1"}
+
+        monkeypatch.setattr(scanner, "sync_domain_queue", fake_sync)
+        monkeypatch.setattr(scanner, "replace_cleanup_rows",
+                            lambda d, rows, scan_date: calls.setdefault("cleanup", rows))
+        monkeypatch.setattr(scanner, "write_to_google_spreadsheet",
+                            lambda *a, **k: calls.setdefault("summary", a[3]))
+        monkeypatch.setattr(scanner, "SUMMARY_DATA", [])
+
+        def _run():
+            stats = scanner.validate_existing_translation_files([domain])
+            return calls, stats
+        return _run
+
+    def test_findings_and_cleanup_rows(self, run, tmp_path):
+        _post(tmp_path, "2024-01-02-b", {"index.md": EN.format(slug="b")})
+        _post(tmp_path, "2024-01-01-a", {"index.md": EN.format(slug="a"), "index.de.md": "x", "index.xx.md": "x"})
+        calls, stats = run()
+        assert [(f[config.KEY_DIR_BASE], f[config.KEY_ISSUE], f[config.KEY_MISSING_FILES])
+                for f in calls["queue"]] == [("2024-01-01-a", "MISSING", "fr"), ("2024-01-02-b", "MISSING", "de, fr")]
+        assert calls["queue"][1][config.KEY_NOTES] == "New post"
+        assert calls["queue"][0][config.KEY_ACTION] == config.ACTION_TRANSLATE
+        assert [(r[config.KEY_ISSUE], r[config.KEY_MISSING_FILES]) for r in calls["cleanup"]] == [("EXTRA", "xx")]
+        assert stats.items_discovered == 3 and stats.items_succeeded == 3
+
+    def test_summary_links_to_the_queue_tab(self, run, tmp_path):
+        _post(tmp_path, "2024-01-01-a", {"index.md": EN.format(slug="a")})
+        calls, _ = run()
+        (row,) = calls["summary"]
+        assert row[1] == config.DOMAIN_ASPOSE_COM and row[4] == "https://sheet#gid=1"
+
+    def test_nothing_flagged_still_reconciles_with_empty_findings(self, run, tmp_path):
+        _post(tmp_path, "2024-01-01-a", {"index.md": EN.format(slug="a"), "index.de.md": "x", "index.fr.md": "x"})
+        calls, _ = run()
+        assert calls["queue"] == [] and calls["cleanup"] == []

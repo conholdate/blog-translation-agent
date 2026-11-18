@@ -1,16 +1,21 @@
 """
-Tests for the per-post history comment: build_history_comment() formatting and
-append_history_comment() / _ensure_history_columns() against a fake worksheet.
+Tests for the per-post comment: build_history_comment() formatting, and
+append_queue_comment(s) writing it to the post's open queue rows (Comments
+column of the domain tab) against a fake worksheet.
 """
 
 import sys
 import os
 
+sys.path.insert(0, os.path.dirname(__file__))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import pytest
+from gspread.utils import a1_to_rowcol
 
+import config
 import io_google_spreadsheet as gs
+from fake_sheet import FakeWorksheet
 from translator import build_history_comment
 
 LANGS = ["ar", "cs", "de", "es", "fa", "fr", "he", "id", "it", "ja", "ko",
@@ -64,146 +69,117 @@ class TestBuildHistoryComment:
 
 
 # ============================================================================
-# Fake gspread worksheet
+# append_queue_comments — comments go to the post's open queue rows
 # ============================================================================
 
-class FakeWorksheet:
-    def __init__(self, rows, col_count=None):
-        self.rows = [list(r) for r in rows]
-        self.col_count = col_count or max(len(r) for r in rows)
-        self.updated_cells = []
-
-    def row_values(self, i):
-        return list(self.rows[i - 1])
-
-    def get_all_values(self):
-        return [list(r) for r in self.rows]
-
-    def add_cols(self, n):
-        self.col_count += n
-
-    def update(self, values, range_name, value_input_option=None):
-        col = ord(range_name.rstrip("0123456789")[-1]) - ord("A")
-        for j, v in enumerate(values[0]):
-            row = self.rows[0]
-            row += [""] * (col + j + 1 - len(row))
-            row[col + j] = v
-
-    def update_cell(self, row, col, value):
-        self.updated_cells.append((row, col, value))
-        r = self.rows[row - 1]
-        r += [""] * (col - len(r))
-        r[col - 1] = value
-
-    def batch_update(self, updates, value_input_option=None):
-        from gspread.utils import a1_to_rowcol
-        for u in updates:
-            row, col = a1_to_rowcol(u["range"])
-            self.update_cell(row, col, u["values"][0][0])
+def _queue_row(slug, status="", comment="", langs="de", issue="MISSING"):
+    row = {h: "" for h in config.HEADERS_QUEUE}
+    row.update({"Domain": "blog.aspose.com", "Product": "medical", "Blog Post Directory": slug,
+                "Issue": issue, "Target Translations": langs, "Status": status, "Comments": comment})
+    return [row[h] for h in config.HEADERS_QUEUE]
 
 
-OLD_HEADER = gs.HISTORY_HEADERS[:-2]      # tab created before 'Comments' and 'Notes' existed
-COMMENTS_HEADER = gs.HISTORY_HEADERS[:-1]  # tab created before 'Notes' existed
+C_COMMENTS = config.HEADERS_QUEUE.index("Comments") + 1      # 1-based sheet column
 
 
-def _hist_row(slug, status="pending", comment=None, langs="de"):
-    row = ["2026-10-21", "blog.aspose.com", "medical", slug, "url", "A", "MISSING", langs,
-           str(len(langs.split(","))), status, ""]
-    return row + ([comment] if comment is not None else [])
+def written(ws):
+    """(sheet row, value) of every Comments cell written."""
+    out = []
+    for method, rng, opt in ws.calls:
+        if method == "batch_update":
+            assert opt == "RAW"            # comments start with "- ": never a formula
+            r, c = a1_to_rowcol(rng)
+            assert c == C_COMMENTS
+            out.append((r, ws.rows[r - 1][c - 1]))
+    return out
 
 
-class TestEnsureHistoryColumns:
-    def test_adds_comments_column_and_widens_grid(self):
-        ws = FakeWorksheet([OLD_HEADER], col_count=11)
-        gs._ensure_history_columns(ws)
-        assert ws.rows[0][-2:] == ["Comments", "Notes"]
-        assert ws.col_count == 13
-
-    def test_adds_notes_column_after_comments(self):
-        ws = FakeWorksheet([COMMENTS_HEADER], col_count=12)
-        gs._ensure_history_columns(ws)
-        assert ws.rows[0] == gs.HISTORY_HEADERS
-        assert ws.col_count == 13
-
-    def test_noop_when_present(self):
-        ws = FakeWorksheet([gs.HISTORY_HEADERS])
-        gs._ensure_history_columns(ws)
-        assert ws.rows[0] == gs.HISTORY_HEADERS
-
-
-class TestAppendHistoryComment:
+class TestAppendQueueComment:
     @pytest.fixture
     def ws(self, monkeypatch):
         ws = FakeWorksheet([
-            gs.HISTORY_HEADERS,
-            _hist_row("done-post", status="completed"),
-            _hist_row("my-post"),
-            _hist_row("other-post", comment="old"),
+            config.HEADERS_QUEUE,
+            _queue_row("held-post", status="hold"),
+            _queue_row("my-post"),
+            _queue_row("other-post", comment="old"),
         ])
-        monkeypatch.setattr(gs, "_get_history_worksheet", lambda: ws)
+        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: ws)
         return ws
 
     def test_writes_comment_to_open_row(self, ws):
-        assert gs.append_history_comment("blog.aspose.com", "my-post", "C1") is True
-        assert ws.updated_cells == [(3, 12, "C1")]
+        assert gs.append_queue_comment("blog.aspose.com", "my-post", "C1") is True
+        assert written(ws) == [(3, "C1")]
 
     def test_appends_below_existing_comment_with_blank_line(self, ws):
-        gs.append_history_comment("blog.aspose.com", "other-post", "new")
-        assert ws.updated_cells == [(4, 12, "old\n\nnew")]
+        gs.append_queue_comment("blog.aspose.com", "other-post", "new")
+        assert written(ws) == [(4, "old\n\nnew")]
 
-    def test_ignores_completed_rows(self, ws):
-        assert gs.append_history_comment("blog.aspose.com", "done-post", "C") is False
-        assert ws.updated_cells == []
+    def test_ignores_rows_that_are_not_open(self, ws):
+        assert gs.append_queue_comment("blog.aspose.com", "held-post", "C") is False
+        assert written(ws) == []
 
     def test_unknown_post_returns_false(self, ws):
-        assert gs.append_history_comment("blog.aspose.com", "nope", "C") is False
+        assert gs.append_queue_comment("blog.aspose.com", "nope", "C") is False
+
+    def test_rows_found_by_key_after_the_tab_changed(self, ws):
+        ws.rows.insert(1, _queue_row("inserted-later"))      # someone added a row mid-run
+        gs.append_queue_comment("blog.aspose.com", "my-post", "C1")
+        assert written(ws) == [(4, "C1")]
+
+    def test_adds_comments_column_to_old_tab(self, monkeypatch):
+        header = [h for h in config.HEADERS_QUEUE if h != "Comments"]
+        row = dict(zip(config.HEADERS_QUEUE, _queue_row("my-post")))
+        ws = FakeWorksheet([header, [row[h] for h in header]])
+        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: ws)
+        assert gs.append_queue_comment("blog.aspose.com", "my-post", "C1") is True
+        assert ws.rows[0][-1] == "Comments" and ws.rows[1][len(header)] == "C1"
 
     def test_never_raises(self, monkeypatch):
-        def boom():
+        def boom(domain):
             raise RuntimeError("sheet down")
-        monkeypatch.setattr(gs, "_get_history_worksheet", boom)
-        assert gs.append_history_comment("blog.aspose.com", "my-post", "C") is False
+        monkeypatch.setattr(gs, "get_scan_worksheet", boom)
+        assert gs.append_queue_comment("blog.aspose.com", "my-post", "C") is False
 
 
-class TestSplitHistoryRows:
-    """A post with several open history rows, each tracking its own languages."""
+class TestSplitQueueRows:
+    """A post with several open queue rows, each tracking its own languages."""
 
     @pytest.fixture
     def ws(self, monkeypatch):
         ws = FakeWorksheet([
-            gs.HISTORY_HEADERS,
-            _hist_row("using-converter", langs="ar, cs"),          # row 2
-            _hist_row("using-converter", langs="de"),              # row 3
-            _hist_row("using-converter", langs="es, fa"),          # row 4
-            _hist_row("using-converter", langs="fr, he, id"),      # row 5
-            _hist_row("other-post", langs="de"),                   # row 6
+            config.HEADERS_QUEUE,
+            _queue_row("using-converter", langs="ar, cs"),                  # row 2
+            _queue_row("using-converter", langs="de"),                      # row 3
+            _queue_row("using-converter", langs="es, fa", issue="OUTDATED"),  # row 4
+            _queue_row("using-converter", langs="fr, he, id", issue="ISSUE"),  # row 5
+            _queue_row("other-post", langs="de"),                           # row 6
         ])
-        monkeypatch.setattr(gs, "_get_history_worksheet", lambda: ws)
+        monkeypatch.setattr(gs, "get_scan_worksheet", lambda domain: ws)
         return ws
 
     @staticmethod
     def comment_for(row_langs):
         return "ALL" if row_langs is None else ",".join(row_langs)
 
-    def test_each_matching_row_gets_its_own_languages(self, ws):
-        gs.append_history_comments("blog.aspose.com", "using-converter", self.comment_for,
-                                   run_langs=["de", "es", "fa"])
-        assert ws.updated_cells == [(3, 12, "de"), (4, 12, "es,fa")]
+    def test_each_matching_row_gets_its_own_languages_whatever_the_issue(self, ws):
+        gs.append_queue_comments("blog.aspose.com", "using-converter", self.comment_for,
+                                 run_langs=["de", "es", "fa"])
+        assert written(ws) == [(3, "de"), (4, "es,fa")]
 
     def test_partial_overlap_gets_only_shared_languages(self, ws):
-        gs.append_history_comments("blog.aspose.com", "using-converter", self.comment_for,
-                                   run_langs=["cs", "fr"])
-        assert ws.updated_cells == [(2, 12, "cs"), (5, 12, "fr")]
+        gs.append_queue_comments("blog.aspose.com", "using-converter", self.comment_for,
+                                 run_langs=["cs", "fr"])
+        assert written(ws) == [(2, "cs"), (5, "fr")]
 
     def test_no_overlap_falls_back_to_last_open_row(self, ws):
-        gs.append_history_comments("blog.aspose.com", "using-converter", self.comment_for,
-                                   run_langs=["ja"])
-        assert ws.updated_cells == [(5, 12, "ALL")]
+        gs.append_queue_comments("blog.aspose.com", "using-converter", self.comment_for,
+                                 run_langs=["ja"])
+        assert written(ws) == [(5, "ALL")]
 
     def test_whole_post_comment_goes_to_every_open_row(self, ws):
-        gs.append_history_comment("blog.aspose.com", "using-converter", "❌ Failed")
-        assert [r for r, _, _ in ws.updated_cells] == [2, 3, 4, 5]
-        assert {v for _, _, v in ws.updated_cells} == {"❌ Failed"}
+        gs.append_queue_comment("blog.aspose.com", "using-converter", "❌ Failed")
+        assert [r for r, _ in written(ws)] == [2, 3, 4, 5]
+        assert {v for _, v in written(ws)} == {"❌ Failed"}
 
 
 class TestPerRowCommentContent:

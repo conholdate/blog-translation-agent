@@ -55,9 +55,9 @@ The key variables used by the quality agent are:
 | `PROFESSIONALIZE_API_KEY` | LLM API key for AI validation and retranslation |
 | `PROFESSIONALIZE_BASE_URL` | LLM endpoint URL |
 | `PROFESSIONALIZE_LLM_MODEL` | Model name |
-| `GOOGLE_CREDENTIALS_JSON_SK` | Google service account for per-domain scan sheets |
+| `GOOGLE_CREDENTIALS_JSON_SK` | Google service account for the quality sheets and the scan summary sheet (the old per-domain scan sheets are no longer written) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Google service account for the consolidated scan sheet |
-| `TRANSLATION_SCAN_SHEET_ID` | Consolidated scan sheet (one tab per domain + history) |
+| `TRANSLATION_SCAN_SHEET_ID` | Consolidated scan sheet: one tab per domain (the persistent translation queue), `cleanup` and `history` (completed rows) |
 | `QUALITY_SHEET_ID_ASPOSE_COM` | Quality sheet ID for blog.aspose.com |
 | `QUALITY_SHEET_ID_ASPOSE_CLOUD` | Quality sheet ID for blog.aspose.cloud |
 | `QUALITY_SHEET_ID_GROUPDOCS_COM` | Quality sheet ID for blog.groupdocs.com |

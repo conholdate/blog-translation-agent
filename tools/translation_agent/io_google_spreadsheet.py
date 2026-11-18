@@ -2,8 +2,8 @@ import os
 import json
 import gspread
 import sys
-import gspread
 import config
+import scan_queue as queue
 from run_log import detail
 from datetime import datetime
 from typing import Dict, List, Union # For type hints and better readability
@@ -19,18 +19,16 @@ BASE_DIR = os.getenv("GITHUB_WORKSPACE", os.getcwd())
 printing_allowed = False
 
 # History tab constants
-HISTORY_TAB             = "history"
+# The history tab holds completed rows only (closed queue rows move there);
+# 'Scan Date' is when the row was first flagged. Columns are found by name.
+HISTORY_TAB             = config.HISTORY_TAB
 HISTORY_HEADERS         = [
     "Scan Date", "Domain", "Product", "Blog Post Directory",
     "Blog Post URL", "Author", "Issue", "Target Translations", "Count",
-    "Status", "Completed Date", "Comments", "Notes",
+    "Status", "Completed Date", "Comments", "Notes", "Priority", "Source",
 ]
-HISTORY_COMMENTS_HEADER  = "Comments"   # per-run translation results (Step 2)
-HISTORY_NOTES_HEADER     = "Notes"      # why the scanner flagged the row (refreshed every scan)
 HISTORY_COMMENT_MAX_LEN  = 45000    # Sheets cell limit is 50,000 chars
-HISTORY_STATUS_PENDING   = "pending"
-HISTORY_STATUS_PARTIAL   = "partial"
-HISTORY_STATUS_COMPLETED = "completed"
+HISTORY_STATUS_COMPLETED = config.STATUS_COMPLETED
 
 # ======================================================================================
 # Write Function
@@ -109,60 +107,167 @@ def _auto_resize_columns(ws: gspread.Worksheet) -> None:
     }}}]})
 
 
-DOMAIN_TAB_LEAD_HEADERS = ["Scan Date", "Missing Since", "Days Missing"]
+# ======================================================================================
+# Translation queue (domain tabs), cleanup tab and history tab
+# ======================================================================================
+# The domain tab is a persistent queue that each scan reconciles (scan_queue.py)
+# instead of rewriting; closed rows move to the history tab, which holds
+# completed rows only. Every write re-reads the tab first and finds rows by key
+# (domain, product, post folder, issue) — never by a row number remembered from
+# earlier — because people and other runs may have edited the tab meanwhile.
+# Values are written RAW: comments start with "- " and must never become formulas
+# (so the queue tab shouldn't hold formulas either — they'd be kept as values).
 
-
-def _days_between(first: str, last: str) -> str:
-    """Whole days between two ISO dates/timestamps ('' if either can't be parsed)."""
+def _open_scan_sheet():
+    gc = get_scan_gc()
+    if not gc:
+        return None
     try:
-        return str((datetime.fromisoformat(last[:10]) - datetime.fromisoformat(first[:10])).days)
-    except (ValueError, TypeError):
+        return gc.open_by_key(config.TRANSLATION_SCAN_SHEET_ID)
+    except Exception as e:
+        print(f"❌ Could not open scan sheet: {e}", file=sys.stderr)
+        return None
+
+
+def _get_or_create_tab(title: str, header: List[str], rows: int = 1000):
+    sh = _open_scan_sheet()
+    if not sh:
+        return None
+    try:
+        return sh.worksheet(title)
+    except gspread.exceptions.WorksheetNotFound:
+        ws = sh.add_worksheet(title=title, rows=rows, cols=len(header))
+        ws.update([header], "A1", value_input_option="RAW")
+        print(f"✅ Created '{title}' worksheet.")
+        return ws
+
+
+def get_scan_tab_url(ws: gspread.Worksheet) -> str:
+    """Link straight to a tab of the consolidated scan sheet."""
+    try:
+        return f"{ws.spreadsheet.url}#gid={ws.id}"
+    except Exception:
         return ""
 
 
-def write_domain_scan_results(domain: str, scan_date: str, rows: List[list], headers: List[str],
-                              first_seen: Dict[tuple, str] = None) -> bool:
+def _write_tab(ws: gspread.Worksheet, header: List[str], rows: List[dict], old_values: List[list]) -> None:
     """
-    Overwrite the domain tab in the consolidated scan sheet with the latest scan results.
-
-    - Prepends 'Scan Date' (this scan), 'Missing Since' (first scan that flagged
-      the post, from the history tab) and 'Days Missing' to every row.
-    - Clears all existing content before writing.
-
-    first_seen maps (slug, issue) -> first scan date; see get_history_first_seen().
-    Returns True on success, False on failure.
+    Overwrite ws from A1 with header + rows, then blank the rows left below.
+    The new values are written before anything is cleared, so a failed write
+    never leaves the tab empty.
     """
+    values = [header] + queue.to_values(rows, header)
+    old_n = len(old_values)
+    old_w = max((len(r) for r in old_values), default=0)
+    width = max(len(header), old_w)
+    if ws.row_count < len(values) or ws.col_count < width:
+        ws.resize(rows=max(ws.row_count, len(values)), cols=max(ws.col_count, width))
+    ws.update(values, "A1", value_input_option="RAW")
+    if old_n > len(values):
+        ws.batch_clear([f"A{len(values) + 1}:{gspread.utils.rowcol_to_a1(old_n, width)}"])
+
+
+def sync_domain_queue(domain: str, findings: List[dict], scan_date: str) -> dict:
+    """
+    Reconcile the domain tab (the queue) with this scan's MISSING / OUTDATED
+    findings and move closed rows to the history tab (dropped instead for
+    config.NO_HISTORY_DOMAINS).
+
+    Returns {"ok", "open", "new", "closed", "url"}; ok is False if the queue
+    couldn't be read or written (the scan run then reports it, nothing is lost).
+    """
+    result = {"ok": False, "open": 0, "new": 0, "closed": 0, "url": ""}
     ws = get_scan_worksheet(domain)
     if not ws:
-        return False
-
+        return result
     try:
-        first_seen = first_seen or {}
-        header_row = DOMAIN_TAB_LEAD_HEADERS + headers
-        data_rows  = []
-        for row in rows:
-            since = first_seen.get((row[2], row[5]), scan_date) if len(row) > 5 else scan_date
-            data_rows.append([scan_date, since[:10], _days_between(since, scan_date)] + row)
-
-        ws.clear()
-        ws.update([header_row] + data_rows, value_input_option="USER_ENTERED")
+        values = ws.get_all_values()
+        header, rows = queue.from_values(values)
+        new_queue, closed, added = queue.reconcile(rows, findings, scan_date)
+        header = queue.merged_header(header, config.HEADERS_QUEUE)
+        _write_tab(ws, header, new_queue, values)
         _auto_resize_columns(ws)
-
-        print(f"✅ Scan results written to '{domain}' tab ({len(data_rows)} rows).")
-        return True
-
+        result.update(ok=True, open=len(new_queue), new=len(added), closed=len(closed),
+                      url=get_scan_tab_url(ws))
+        print(f"✅ Queue '{domain}': {len(new_queue)} open row(s), {result['new']} new, {len(closed)} closed.")
     except Exception as e:
-        print(f"❌ Failed to write scan results for '{domain}': {e}", file=sys.stderr)
+        print(f"❌ Failed to update the '{domain}' queue: {e}", file=sys.stderr)
+        return result
+
+    if closed:
+        append_history_rows(domain, closed)
+    return result
+
+
+def append_history_rows(domain: str, rows: List[dict]) -> bool:
+    """
+    Append closed queue rows to the history tab (completed rows only). History's
+    'Scan Date' is when the row was first flagged (its Missing Since).
+    Rows of config.NO_HISTORY_DOMAINS are dropped. Never raises.
+    """
+    if not rows:
+        return True
+    if domain in config.NO_HISTORY_DOMAINS:
+        print(f"ℹ️  {len(rows)} closed row(s) of {domain} dropped (no history kept for this domain).")
+        return True
+    try:
+        ws = _get_history_worksheet()
+        if not ws:
+            return False
+        header = ws.row_values(1)
+
+        def value(row, h):
+            if h == "Scan Date":
+                return str(row.get(config.KEY_MISSING_SINCE) or row.get(config.KEY_SCAN_DATE, ""))
+            return str(row.get(h, ""))
+
+        ws.append_rows([[value(r, h) for h in header] for r in rows], value_input_option="RAW")
+        print(f"✅ History: {len(rows)} completed row(s) added for '{domain}'.")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to add completed rows to history for '{domain}': {e}", file=sys.stderr)
         return False
+
+
+def replace_cleanup_rows(domain: str, extra_rows: List[dict], scan_date: str) -> bool:
+    """
+    Replace this domain's rows in the cleanup tab (EXTRA / junk files of every
+    domain) with this scan's. Other domains' rows are kept. Never raises.
+    """
+    try:
+        ws = _get_or_create_tab(config.CLEANUP_TAB, config.HEADERS_CLEANUP)
+        if not ws:
+            return False
+        values = ws.get_all_values()
+        header, rows = queue.from_values(values)
+        header = queue.merged_header(header, config.HEADERS_CLEANUP)
+        keep = [r for r in rows if not queue.is_blank(r) and r.get(config.KEY_DOMAIN) != domain]
+        new = [{**r, config.KEY_SCAN_DATE: scan_date} for r in extra_rows]
+        _write_tab(ws, header, keep + new, values)
+        print(f"✅ Cleanup tab: {len(new)} EXTRA row(s) for '{domain}'.")
+        return True
+    except Exception as e:
+        print(f"❌ Failed to update the cleanup tab for '{domain}': {e}", file=sys.stderr)
+        return False
+
+
+def _rows_in_step2_order(rows: List[dict], columns: List[str]) -> List[list]:
+    return [[str(r.get(h, "")) for h in columns] for r in rows if not queue.is_blank(r)]
+
+
+# What Step 2 gets per row: the classic columns (by index, see translator.py) + Priority
+QUEUE_READ_COLUMNS = config.HEADERS_MISSING_TRANSLATIONS + [config.KEY_PRIORITY]
 
 
 def read_domain_scan_rows(domain: str):
     """
-    Read the latest scan for a domain from its tab in the consolidated scan sheet.
+    Read the queue (domain tab) for Step 2.
 
-    Columns are located by header name and returned in HEADERS_MISSING_TRANSLATIONS
-    order (the layout the translator uses), so extra columns such as Scan Date /
-    Missing Since don't shift anything. Blank and placeholder rows are skipped.
+    Columns are located by name and returned in QUEUE_READ_COLUMNS order
+    (HEADERS_MISSING_TRANSLATIONS + Priority), so the sheet's own column order
+    and extra columns don't matter. Priority is '' on tabs that don't have it
+    yet (Step 2 then falls back to the issue's default priority). Rows are kept
+    in sheet order; blank and placeholder rows are skipped.
 
     Returns (rows, scan_date), or (None, "") if the tab can't be read.
     """
@@ -170,90 +275,49 @@ def read_domain_scan_rows(domain: str):
         ws = get_scan_worksheet(domain)
         if not ws:
             return None, ""
-        data = ws.get_all_values()
-        if not data:
+        header, rows = queue.from_values(ws.get_all_values())
+        if not header:
             return [], ""
-
-        header = data[0]
         missing = [h for h in config.HEADERS_MISSING_TRANSLATIONS if h not in header]
         if missing:
             print(f"❌ '{domain}' tab is missing column(s) {missing}.", file=sys.stderr)
             return None, ""
-        idx    = [header.index(h) for h in config.HEADERS_MISSING_TRANSLATIONS]
-        c_scan = header.index("Scan Date") if "Scan Date" in header else None
-
-        # Rows are kept as they are in the tab (order included): a post may be split
-        # by hand over several rows, e.g. to translate a couple of languages first.
-        rows, scan_date = [], ""
-        for raw in data[1:]:
-            raw = raw + [""] * (len(header) - len(raw))
-            row = [raw[i] for i in idx]
-            if not str(row[0]).strip() or not str(row[2]).strip():
-                continue
-            rows.append(row)
-            if c_scan is not None and not scan_date:
-                scan_date = raw[c_scan]
-        return rows, scan_date
-
+        scan_date = next((r.get(config.KEY_SCAN_DATE, "") for r in rows
+                          if not queue.is_blank(r) and r.get(config.KEY_SCAN_DATE)), "")
+        return _rows_in_step2_order(rows, QUEUE_READ_COLUMNS), scan_date
     except Exception as e:
         print(f"❌ Could not read '{domain}' tab from the consolidated scan sheet: {e}", file=sys.stderr)
         return None, ""
 
 
-def get_history_first_seen(domain: str) -> Dict[tuple, str]:
-    """
-    (slug, issue) -> Scan Date of the open (not completed) history row, i.e. the
-    first scan that flagged the post. update_history_tab() never changes that date
-    while the row stays open. Returns {} if the history tab can't be read.
-    """
+def read_cleanup_rows(domain: str) -> List[list]:
+    """This domain's EXTRA rows from the cleanup tab, in HEADERS_MISSING_TRANSLATIONS order ([] if none)."""
     try:
-        ws = _get_history_worksheet()
-        if not ws:
-            return {}
-        data = ws.get_all_values()
-        header = data[0]
-        c_date, c_domain, c_slug, c_issue, c_status = (header.index(h) for h in
-            ("Scan Date", "Domain", "Blog Post Directory", "Issue", "Status"))
-        first_seen = {}
-        for row in data[1:]:
-            row = row + [""] * (len(header) - len(row))
-            if row[c_domain] == domain and row[c_status] != HISTORY_STATUS_COMPLETED:
-                first_seen[(row[c_slug], row[c_issue])] = row[c_date]
-        return first_seen
+        sh = _open_scan_sheet()
+        if not sh:
+            return []
+        try:
+            ws = sh.worksheet(config.CLEANUP_TAB)
+        except gspread.exceptions.WorksheetNotFound:
+            return []
+        header, rows = queue.from_values(ws.get_all_values())
+        return _rows_in_step2_order([r for r in rows if r.get(config.KEY_DOMAIN) == domain],
+                                    config.HEADERS_MISSING_TRANSLATIONS)
     except Exception as e:
-        print(f"⚠️  Could not read history first-seen dates for '{domain}': {e}", file=sys.stderr)
-        return {}
+        print(f"⚠️  Could not read the cleanup tab: {e}", file=sys.stderr)
+        return []
 
 
-def _ensure_history_columns(ws: gspread.Worksheet) -> None:
+def append_queue_comment(domain: str, slug: str, comment: str, run_langs: List[str] = None) -> bool:
+    """Append the same whole-post comment (e.g. an error or draft skip) to the post's open queue rows."""
+    return append_queue_comments(domain, slug, lambda row_langs: comment, run_langs=run_langs)
+
+
+def append_queue_comments(domain: str, slug: str, comment_for, run_langs: List[str] = None) -> bool:
     """
-    Add any HISTORY_HEADERS missing from an existing history tab (e.g. 'Comments'
-    on a tab created before that column existed), widening the grid if needed.
-    update_history_tab() writes full HISTORY_HEADERS-wide rows, so the grid
-    must be at least that wide.
-    """
-    header = ws.row_values(1)
-    missing = [h for h in HISTORY_HEADERS if h not in header]
-    if not missing:
-        return
-    needed = len(header) + len(missing)
-    if ws.col_count < needed:
-        ws.add_cols(needed - ws.col_count)
-    ws.update([missing], f"{gspread.utils.rowcol_to_a1(1, len(header) + 1)}", value_input_option="USER_ENTERED")
-    print(f"✅ Added column(s) {missing} to '{HISTORY_TAB}' worksheet.")
-
-
-def append_history_comment(domain: str, slug: str, comment: str, issue: str = "MISSING") -> bool:
-    """Append the same whole-post comment (e.g. an error or draft skip) to every open history row of the post."""
-    return append_history_comments(domain, slug, lambda row_langs: comment, issue=issue)
-
-
-def append_history_comments(domain: str, slug: str, comment_for, run_langs: List[str] = None,
-                            issue: str = "MISSING") -> bool:
-    """
-    Append comment blocks to the open (not completed) history rows of
-    (domain, slug, issue). A post can have several open rows, each tracking its
-    own set of languages (split by hand, or left over from partial runs).
+    Append comment blocks to the open queue rows of (domain, post folder), any
+    issue. A post can have several open rows, each tracking its own languages
+    (MISSING / OUTDATED / ISSUE, or split by hand).
 
     comment_for(row_langs) builds the comment for one row:
       - run_langs given: every open row sharing a language with run_langs gets
@@ -261,31 +325,34 @@ def append_history_comments(domain: str, slug: str, comment_for, run_langs: List
         one, the last open row gets comment_for(None) (whole-run comment).
       - run_langs None: every open row gets comment_for(None).
 
-    Earlier comments are kept above, separated by a blank line. All cells are
-    written in one batch. Returns True if anything was written.
+    The tab is re-read here and rows are found by key, so rows added, removed
+    or re-sorted since the run started don't matter. Earlier comments are kept
+    above, separated by a blank line. Returns True if anything was written.
     Never raises — comment logging must not halt the pipeline.
     """
     try:
-        ws = _get_history_worksheet()
+        ws = get_scan_worksheet(domain)
         if not ws:
             return False
 
-        all_rows = ws.get_all_values()
-        header   = all_rows[0] if all_rows else []
-        c_domain, c_slug, c_issue, c_status, c_langs = (header.index(h) for h in
-            ("Domain", "Blog Post Directory", "Issue", "Status", "Target Translations"))
-        c_comments = header.index(HISTORY_COMMENTS_HEADER)
+        values = ws.get_all_values()
+        header = [str(h).strip() for h in values[0]] if values else []
+        if config.KEY_COMMENTS not in header:
+            ws.update([[config.KEY_COMMENTS]], gspread.utils.rowcol_to_a1(1, len(header) + 1),
+                      value_input_option="RAW")
+            header.append(config.KEY_COMMENTS)
+        c_comments = header.index(config.KEY_COMMENTS)
+        _, rows = queue.from_values([header] + values[1:])
 
         open_rows = []      # (sheet_row, row_langs, existing comment)
-        for i, row in enumerate(all_rows[1:], start=2):
-            row = row + [""] * (len(header) - len(row))
-            if (row[c_domain] == domain and row[c_slug] == slug
-                    and row[c_issue] == issue and row[c_status] != HISTORY_STATUS_COMPLETED):
-                langs = [l.strip() for l in row[c_langs].split(",") if l.strip()]
-                open_rows.append((i, langs, row[c_comments]))
+        for i, row in enumerate(rows, start=2):
+            if (row.get(config.KEY_DOMAIN) == domain and row.get(config.KEY_DIR_BASE) == slug
+                    and queue.is_open(row)):
+                open_rows.append((i, queue.split_langs(row.get(config.KEY_MISSING_FILES)),
+                                  row.get(config.KEY_COMMENTS, "")))
 
         if not open_rows:
-            print(f"⚠️  No open history row for {domain}/{slug} ({issue}); comment not logged.")
+            print(f"⚠️  No open queue row for {domain}/{slug}; comment not logged.")
             return False
 
         targets = []        # (sheet_row, existing, comment)
@@ -308,176 +375,50 @@ def append_history_comments(domain: str, slug: str, comment_for, run_langs: List
                 text = text[-HISTORY_COMMENT_MAX_LEN:]    # drop the oldest lines first
             updates.append({"range": gspread.utils.rowcol_to_a1(r, c_comments + 1), "values": [[text]]})
 
-        # RAW: comments start with "- " and must never be parsed as a formula
         ws.batch_update(updates, value_input_option="RAW")
-        print(f"✅ History comment logged for {slug} (row{'s' if len(targets) > 1 else ''} "
+        print(f"✅ Queue comment logged for {slug} (row{'s' if len(targets) > 1 else ''} "
               f"{', '.join(str(r) for r, _, _ in targets)}).")
         return True
 
     except Exception as e:
-        print(f"⚠️  Failed to log history comment for {domain}/{slug}: {e}", file=sys.stderr)
+        print(f"⚠️  Failed to log queue comment for {domain}/{slug}: {e}", file=sys.stderr)
         return False
+
+
+def _ensure_history_columns(ws: gspread.Worksheet) -> None:
+    """
+    Add any HISTORY_HEADERS missing from an existing history tab (e.g. 'Source'
+    on a tab created before that column existed), widening the grid if needed.
+    """
+    header = ws.row_values(1)
+    missing = [h for h in HISTORY_HEADERS if h not in header]
+    if not missing:
+        return
+    needed = len(header) + len(missing)
+    if ws.col_count < needed:
+        ws.add_cols(needed - ws.col_count)
+    ws.update([missing], f"{gspread.utils.rowcol_to_a1(1, len(header) + 1)}", value_input_option="RAW")
+    print(f"✅ Added column(s) {missing} to '{HISTORY_TAB}' worksheet.")
 
 
 def _get_history_worksheet() -> gspread.Worksheet:
     """Return the 'history' worksheet, creating it if it doesn't exist."""
-    gc = get_scan_gc()
-    if not gc:
+    sh = _open_scan_sheet()
+    if not sh:
         return None
     try:
-        sh = gc.open_by_key(config.TRANSLATION_SCAN_SHEET_ID)
         try:
             ws = sh.worksheet(HISTORY_TAB)
             _ensure_history_columns(ws)
             return ws
         except gspread.exceptions.WorksheetNotFound:
             ws = sh.add_worksheet(title=HISTORY_TAB, rows=5000, cols=len(HISTORY_HEADERS))
-            ws.append_row(HISTORY_HEADERS, value_input_option="USER_ENTERED")
+            ws.update([HISTORY_HEADERS], "A1", value_input_option="RAW")
             print(f"✅ Created '{HISTORY_TAB}' worksheet.")
             return ws
     except Exception as e:
         print(f"❌ Could not open history worksheet: {e}", file=sys.stderr)
         return None
-
-
-def update_history_tab(domain: str, scan_date: str, current_rows: List[list]) -> bool:
-    """
-    Update the history tab with the latest scan results for a domain.
-
-    current_rows must match HEADERS_SCAN_RESULTS column order:
-    [domain, product, slug, url, author, issue, count, target_translations, action, status, notes]
-    (notes is optional).
-
-    Tracked independently per (domain, slug, issue) — a post with both a
-    MISSING and an EXTRA issue gets two history rows, each progressing on
-    its own lifecycle. "Target Translations" holds missing-language codes
-    on a MISSING row, or junk filenames on an EXTRA row — the set-based
-    completion check below treats them as opaque tokens either way.
-
-    Logic per existing history row (Status != completed):
-      - Post/issue gone from current scan   → Status = completed, Completed Date = scan_date
-      - Post/issue present, fewer items     → Status = partial,   update Target Translations/Count
-      - Post/issue present, same items      → no change
-    On every open row still flagged, Notes is refreshed with the scan's latest
-    reason (e.g. a newer English edit on an OUTDATED row).
-
-    New (post, issue) pairs not yet in history → appended as pending.
-    """
-    ws = _get_history_worksheet()
-    if not ws:
-        return False
-
-    try:
-        all_rows = ws.get_all_values()
-        data_rows = all_rows[1:] if len(all_rows) > 1 else []   # skip header
-
-        # Column indices inside a history row (0-based)
-        C_DOMAIN  = 1
-        C_SLUG    = 3
-        C_ISSUE   = 6
-        C_LANGS   = 7
-        C_COUNT   = 8
-        C_STATUS  = 9
-        C_DONE    = 10
-        # Notes is found by name (added after Comments by _ensure_history_columns)
-        header    = all_rows[0] if all_rows else HISTORY_HEADERS
-        C_NOTES   = header.index(HISTORY_NOTES_HEADER) if HISTORY_NOTES_HEADER in header else 12
-        width     = max(len(HISTORY_HEADERS), len(header), C_NOTES + 1)
-
-        # Build lookup from current scan keyed by (domain, slug, issue)
-        # current_rows: [domain(0), product(1), slug(2), url(3), author(4), issue(5),
-        #                count(6), target_translations(7), action(8), status(9)]
-        current_lookup = {
-            (r[0], r[2], r[5]): r
-            for r in current_rows
-            if len(r) >= 8 and r[0] and r[2]
-        }
-
-        batch_updates = []     # columns A..K (Scan Date..Completed Date), USER_ENTERED
-        notes_updates = []     # Notes column, RAW
-        seen_keys     = set()
-        # Comments (col L) is never rewritten here: it starts with "- " and
-        # USER_ENTERED would parse it as a formula (append_history_comments writes it RAW)
-        last_col = gspread.utils.rowcol_to_a1(1, C_DONE + 1)[:-1]       # "K"
-        notes_col = gspread.utils.rowcol_to_a1(1, C_NOTES + 1)[:-1]     # "M"
-
-        def _queue_row(sheet_row, row):
-            batch_updates.append({"range": f"A{sheet_row}:{last_col}{sheet_row}", "values": [row[:C_DONE + 1]]})
-            notes_updates.append({"range": f"{notes_col}{sheet_row}", "values": [[row[C_NOTES]]]})
-
-        for i, row in enumerate(data_rows):
-            row = list(row) + [""] * (width - len(row))  # pad short rows
-
-            if row[C_DOMAIN] != domain:
-                continue
-            if row[C_STATUS] == HISTORY_STATUS_COMPLETED:
-                continue
-
-            key = (row[C_DOMAIN], row[C_SLUG], row[C_ISSUE])
-            seen_keys.add(key)
-            sheet_row = i + 2   # +1 header, +1 for 1-indexed
-
-            if key in current_lookup:
-                cur = current_lookup[key]
-                # Items still flagged for this post+issue (from current scan)
-                cur_items  = {l.strip() for l in str(cur[7]).split(",") if l.strip()}
-                # Items this specific history row was tracking
-                hist_items = {l.strip() for l in row[C_LANGS].split(",")  if l.strip()}
-
-                # Which of this row's items are still flagged?
-                remaining = hist_items & cur_items
-
-                cur_notes = str(cur[10]) if len(cur) > 10 else ""
-                notes_changed = bool(remaining) and cur_notes != row[C_NOTES]
-                row[C_NOTES] = cur_notes if remaining else row[C_NOTES]
-
-                if not remaining:
-                    # All items in this row are now resolved
-                    row[C_STATUS] = HISTORY_STATUS_COMPLETED
-                    row[C_DONE]   = scan_date
-                    _queue_row(sheet_row, row)
-                elif remaining < hist_items:
-                    # Some items in this row are still flagged
-                    remaining_str = ", ".join(sorted(remaining))
-                    row[C_LANGS]  = remaining_str
-                    row[C_COUNT]  = str(len(remaining))
-                    row[C_STATUS] = HISTORY_STATUS_PARTIAL
-                    _queue_row(sheet_row, row)
-                elif notes_changed:
-                    # All items still flagged; only the reason changed
-                    _queue_row(sheet_row, row)
-                # else: remaining == hist_items, same reason → no change
-            else:
-                # Post+issue is completely gone from the current scan
-                row[C_STATUS] = HISTORY_STATUS_COMPLETED
-                row[C_DONE]   = scan_date
-                _queue_row(sheet_row, row)
-
-        if batch_updates:
-            ws.batch_update(batch_updates, value_input_option="USER_ENTERED")
-            ws.batch_update(notes_updates, value_input_option="RAW")
-
-        # Append rows for (post, issue) pairs not yet in history
-        new_rows = []
-        for r in current_rows:
-            if len(r) >= 8 and r[0] and r[2] and (r[0], r[2], r[5]) not in seen_keys:
-                new = [scan_date, r[0], r[1], r[2], r[3], r[4], r[5],
-                       r[7], str(r[6]), HISTORY_STATUS_PENDING, ""]
-                new += [""] * (width - len(new))
-                new[C_NOTES] = str(r[10]) if len(r) > 10 else ""
-                new_rows.append(new)
-
-        if new_rows:
-            ws.append_rows(new_rows, value_input_option="USER_ENTERED")
-
-        _auto_resize_columns(ws)
-
-        print(f"✅ History updated for '{domain}': {len(batch_updates)} updated, {len(new_rows)} new.")
-        return True
-
-    except Exception as e:
-        print(f"❌ Failed to update history for '{domain}': {e}", file=sys.stderr)
-        return False
 
 
 def write_to_google_spreadsheet(

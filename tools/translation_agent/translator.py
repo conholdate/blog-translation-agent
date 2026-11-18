@@ -10,7 +10,8 @@ from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from openai import OpenAI
 from dataclasses import dataclass, field
-from io_google_spreadsheet import read_from_google_spreadsheet, read_domain_scan_rows, append_history_comments
+from io_google_spreadsheet import read_domain_scan_rows, read_cleanup_rows, append_queue_comments
+import scan_queue
 import json
 import argparse
 import config
@@ -307,7 +308,8 @@ def build_history_comment(total: int = 0,
                           draft: bool = False,
                           date: str = None) -> str:
     """
-    Build the per-post comment for the history tab, e.g.
+    Build the per-post comment for the queue row's Comments column (it moves
+    to the history tab with the row once the row is closed), e.g.
 
         - Date: 2026-10-29
         - ⚠️ Partial 18/21
@@ -1039,29 +1041,28 @@ class TranslationOrchestrator:
             self.link_localizers[domain] = LinkLocalizer(domain, f"blog-checkedout-repo/content/{blog_main_repo}")
         return self.link_localizers[domain]
 
-    def log_post_comment(self, domain: str, slug: str, comment, run_langs: List[str] = None,
-                         issue: str = config.ISSUE_MISSING):
+    def log_post_comment(self, domain: str, slug: str, comment, run_langs: List[str] = None):
         """
-        Print the per-post comment; in production also append it to the history tab.
+        Print the per-post comment; in production also append it to the post's
+        open queue rows (Comments column of the domain tab — it moves to the
+        history tab with the row once the row is closed).
 
-        comment is either a string (whole-post comment, written to every open
-        history row of the post) or comment_for(row_langs) -> str, which builds
-        each row's comment for just the languages that row tracks (see
-        append_history_comments); run_langs are the languages this run handled;
-        issue picks which of the post's history rows (MISSING / OUTDATED) get it.
+        comment is either a string (whole-post comment) or comment_for(row_langs)
+        -> str, which builds each row's comment for just the languages that row
+        tracks (see append_queue_comments). run_langs are the languages this run
+        handled: rows sharing one of them get the comment; a whole-post comment
+        without run_langs goes to every open row of the post.
         """
         comment_for = comment if callable(comment) else (lambda row_langs: comment)
-        detail(f"\n📝 History comment for {slug}:\n{comment_for(None)}\n")
+        detail(f"\n📝 Queue comment for {slug}:\n{comment_for(None)}\n")
         if not config.PRODUCTION_ENV:
-            return "history: local run, not written"   # never write into the production history tab
+            return "queue: local run, not written"   # never write into the production queue
         try:
-            written = append_history_comments(domain, slug, comment_for,
-                                              run_langs=run_langs if callable(comment) else None,
-                                              issue=issue)
-            return "history ✓" if written else "history: not written"
+            written = append_queue_comments(domain, slug, comment_for, run_langs=run_langs)
+            return "queue ✓" if written else "queue: not written"
         except Exception as e:
-            print(f"⚠️  Could not log history comment for {slug}: {e}")
-            return "history: not written"
+            print(f"⚠️  Could not log queue comment for {slug}: {e}")
+            return "queue: not written"
 
     def queue_translations(self, posts_list: List[List[Any]]):
         """Register every queued (post, lang) so links to posts translated later in this run count as existing."""
@@ -1124,7 +1125,6 @@ class TranslationOrchestrator:
                 missed_langs = discovery_list = [x.strip() for x in item[7].split(',')]
                 langs = [l for l in missed_langs if l]
                 retranslate = is_outdated_row(item)
-                issue = item[5] if len(item) > 5 else config.ISSUE_MISSING
 
                 info(f"\n━━━ [{post_no}/{n_posts}] {product}/{slug}  ·  {post_author}"
                      + ("  ·  RETRANSLATE (outdated)" if retranslate else ""))
@@ -1155,7 +1155,7 @@ class TranslationOrchestrator:
                 # Draft posts aren't final yet and won't be re-synced into existing
                 # translations once published, so skip translating them altogether.
                 if frontmatter.get('draft') is True:
-                    history = self.log_post_comment(domain, slug, build_history_comment(draft=True), issue=issue)
+                    history = self.log_post_comment(domain, slug, build_history_comment(draft=True), run_langs=langs)
                     info(f"    Result: {result_head(draft=True)} (source index.md is draft: true) · {history}")
                     run_results["⏭️"] += 1
                     continue
@@ -1253,7 +1253,7 @@ class TranslationOrchestrator:
 
                 def comment_for(row_langs, langs=langs, failed=failed, kept=kept,
                                 success_list=success_list, skipped_list=skipped_list):
-                    """Comment for one history row, limited to the languages it tracks (None = all)."""
+                    """Comment for one queue row, limited to the languages it tracks (None = all)."""
                     subset = set(row_langs) if row_langs is not None else set(langs)
                     return build_history_comment(
                         total        = len(subset),
@@ -1264,7 +1264,7 @@ class TranslationOrchestrator:
                         lang_order   = langs,
                     )
 
-                history = self.log_post_comment(domain, slug, comment_for, run_langs=langs, issue=issue)
+                history = self.log_post_comment(domain, slug, comment_for, run_langs=langs)
                 head = result_head(len(langs), success_list, skipped_list, failed)
                 info(f"    Result: {head} · {fmt_duration(end_time - start_time)}"
                      f" · {fmt_tokens(self.token_tracker.total_tokens)} tokens · {history}")
@@ -1283,7 +1283,7 @@ class TranslationOrchestrator:
                 if len(item) > 2:
                     history = " · " + self.log_post_comment(
                         item[0], item[2], build_history_comment(error=error),
-                        issue=item[5] if len(item) > 5 else config.ISSUE_MISSING)
+                        run_langs=scan_queue.split_langs(item[7]) if len(item) > 7 else None)
                 info(f"    Result: {result_head(error=error)}{history}")
                 info("    ⏭️  Skipping to the next post...")
                 run_results["❌"] += 1
@@ -1515,13 +1515,29 @@ def is_outdated_row(row: List[Any]) -> bool:
     return len(row) > 5 and row[5] == config.ISSUE_OUTDATED
 
 
-def missing_first(posts_list: List[List[Any]]) -> List[List[Any]]:
+def row_priority_rank(row: List[Any]) -> int:
     """
-    MISSING rows before OUTDATED rows, each group keeping its sheet order, so new
-    posts never wait behind the retranslation backlog.
+    Rank of a queue row (lower runs first): its Priority (col 10 — Urgent, High,
+    Normal, Low), or, when blank / unknown / not in the tab yet, the issue's
+    default: MISSING High, ISSUE Normal, OUTDATED Low.
     """
-    return ([r for r in posts_list if not is_outdated_row(r)] +
-            [r for r in posts_list if is_outdated_row(r)])
+    return scan_queue.priority_rank({
+        config.KEY_ISSUE   : row[5] if len(row) > 5 else "",
+        config.KEY_PRIORITY: row[10] if len(row) > 10 else "",
+    })
+
+
+def is_open_row(row: List[Any]) -> bool:
+    """Status (col 9) blank / pending / partial; 'invalid', 'hold' or anything else is skipped."""
+    return scan_queue.is_open({config.KEY_STATUS: row[9] if len(row) > 9 else ""})
+
+
+def queue_order(posts_list: List[List[Any]]) -> List[List[Any]]:
+    """
+    Open rows only, by priority; rows of the same priority keep their sheet
+    order (so a post split by hand — "these 2 languages first" — still works).
+    """
+    return sorted((r for r in posts_list if is_open_row(r)), key=row_priority_rank)
 
 
 def filter_valid_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
@@ -1658,22 +1674,18 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
         if posts_list is None:
             # The consolidated scan sheet (domain tab) is the source, in DEV too —
             # reading is harmless and all writes stay production-only.
+            # The queue (domain tab of the consolidated scan sheet) is the only
+            # source, in DEV too — reading is harmless and all writes stay
+            # production-only. (The old per-domain sheets are no longer written.)
             posts_list, scan_date = read_domain_scan_rows(currentDomain)
-            if posts_list is not None:
-                info(f"    Source: consolidated scan sheet · '{currentDomain}' tab · scanned {scan_date[:16].replace('T', ' ') or 'unknown'} UTC")
-            else:
-                # Fallback while the old per-domain sheets are still written by the scanner
-                info("    ⚠️  Could not read the consolidated scan sheet — falling back to the old per-domain sheet")
-                if config.PRODUCTION_ENV:
-                    posts_list = read_from_google_spreadsheet(config.domains_data[currentDomain][config.KEY_SHEET_ID])
-                else: #Test Environment
-                    posts_list = read_from_google_spreadsheet(config.SHEET_ID_TEST_QA)
-                info("    Source: old per-domain sheet (first tab)")
-                
-
+            if posts_list is None:
+                raise RuntimeError(f"Could not read the '{currentDomain}' queue from the consolidated scan sheet.")
+            info(f"    Source: consolidated scan sheet · '{currentDomain}' tab · scanned {scan_date[:16].replace('T', ' ') or 'unknown'} UTC")
+            # EXTRA rows live in the cleanup tab (older queues had them in the domain tab)
+            posts_list = posts_list + read_cleanup_rows(currentDomain)
 
         # Keep the raw sheet read around so EXTRA-issue rows aren't lost
-        # once filter_valid_rows() narrows posts_list to MISSING-only rows.
+        # once filter_valid_rows() narrows posts_list to translation rows.
         raw_posts_list = posts_list
 
         # Keep only rows that have the required fields: domain, product, slug, and missing langs
@@ -1719,9 +1731,9 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
             for row in already_done:
                 detail(f"      already translated: {row[1]}/{row[2]}")
 
-        # New posts (MISSING) before retranslations (OUTDATED)
+        # Open rows only, by Priority (Urgent, High, Normal, Low), then sheet order
         if posts_list:
-            posts_list = missing_first(posts_list)
+            posts_list = queue_order(posts_list)
 
         # ======================
         # FILTER by LIMIT

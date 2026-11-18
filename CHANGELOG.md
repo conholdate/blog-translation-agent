@@ -8,6 +8,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **Persistent translation queue** (18 Nov 2026): the domain tab is no longer cleared and rewritten by each scan — it is reconciled (`scan_queue.py`, `io_google_spreadsheet.sync_domain_queue()`): languages no longer flagged are removed (Status `partial`), rows with nothing left move to `history` as `completed`, new findings are added at the bottom. Row splits, order, Priority, Status, Comments and people's own columns survive. Why: the full rewrite wiped manual edits and made non-derivable rows (manual / agent ISSUE rows) impossible
+- Queue columns `Priority` (Urgent / High / Normal / Low — defaults MISSING High, ISSUE Normal, OUTDATED Low; set on new rows only, never overwritten; Urgent is for people), `Source` (Scanner / Manual / agent name) and `Comments`; `Missing Since` is now kept on the queue row (first flagged, never changed)
+- Queue Status `hold` (or any value other than blank / `pending` / `partial`) skips a row in Step 2 and keeps the scan from closing or re-adding it
+- `cleanup` tab — EXTRA (junk file) rows of all domains in one tab; Step 2 deletes its domain's files from there
+- `reset_scan_queue.py` — one-time reset by hand (dry run unless `--apply`): backs up tabs as `bak-…`, deletes non-completed and blog.groupdocs.com history rows, clears domain + cleanup tabs; the next scan rebuilds the queue
+- Tests: `test_scan_queue.py`, `test_reset_scan_queue.py`, queue sync / cleanup / history cases in `test_consolidated_scan_sheet.py`, queue comments in `test_history_comments.py`, priority ordering in `test_outdated_rows.py`, the scanner's queue write in `test_scan_missing_translations.py`; shared `tests/fake_sheet.py`
 - `OUTDATED` / `Retranslate` scan rows: a translation is outdated when its post's `index.md` was committed after it (one `git log` pass per blog, `scan_helpers.last_commits()` / `outdated_langs()`; a fix committed to `index.md` and its translations together is not outdated; skipped with a warning when there is no git history). OUTDATED rows are listed after MISSING/EXTRA rows, most recent English edit first. Found 17 Nov 2026: 763 outdated posts on the 5 maintained blogs, mostly optimizer-agent edits
 - Step 2 retranslates OUTDATED rows: they pass `filter_valid_rows()`, always run after MISSING rows (`missing_first()`), overwrite the existing `index.{lang}.md`, and log history comments on the OUTDATED history row
 - `Notes` column (domain tab, old per-domain sheet, `history` tab) saying why a row was flagged: `New post` / `N of M languages missing` / `Unsupported language file(s)…` / `English updated <date> by <author> ("<subject>"); translations from <date>`. Refreshed on open history rows each scan. Step 2 reads columns by name and ignores it (`HEADERS_SCAN_RESULTS` = `HEADERS_MISSING_TRANSLATIONS` + `Notes`)
@@ -23,6 +29,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `docs/PIPELINE_MAP.html` — visual pipeline map
 
 ### Changed
+- Step 2 orders open queue rows by Priority, then sheet order (`queue_order()` replaces `missing_first()`); a tab without Priority falls back to the issue's default, so old-format tabs still work
+- Step 2's per-post comments go to the post's open queue rows sharing a language with the run (`append_queue_comments`), any issue; they move to `history` with the row
+- `history` tab holds completed rows only (history `Scan Date` = first flagged); gains `Priority` and `Source` columns; blog.groupdocs.com closed rows are dropped, not historied
+- The summary sheet links to the domain's queue tab
 - Scanner reads only the `index.md` front matter, with `utf-8-sig`; skips folders without `index.md`; author handles and the summary count/email cover MISSING/EXTRA posts only
 - Scanner needs `PROFESSIONALIZE_API_KEY` only with `--translate`
 - Translate workflows sync with `git merge --ff-only --autostash`, so retranslated (modified, tracked) files survive a remote change during the run
@@ -33,6 +43,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `quality_retranslator.py` row selection now filters on `AI Decision == RETRANSLATE`; removed the now-dead `--threshold` flag
 - All translate workflows now `git fetch origin && git merge --ff-only` before staging translated files, to avoid push failures from remote changes during the 10–30+ min translation window
 - Translation commits across all 7 workflows (`.github/workflows/translate-blog-*.yml`, `translate-blogs.yml`) are now authored/committed as `shoaibkhan-aspose <shoaib.khan@aspose.com>` instead of a generic bot identity; removed the dead `git config --global user.name/email` lines that were silently overridden by the `GIT_AUTHOR_*`/`GIT_COMMITTER_*` env vars and never took effect
+
+### Removed
+- Scanner no longer writes the old per-domain sheets, and Step 2 no longer falls back to them (a queue read failure now fails the run and triggers the failure alert)
+- `write_domain_scan_results`, `update_history_tab`, `get_history_first_seen`, `append_history_comment(s)` and `test_history_scan_updates.py` — replaced by the queue functions and `test_scan_queue.py`
 
 ### Fixed
 - Scanner: a `draft: true` listed after `author`/`url` was missed; a post without `author` crashed the scan; a missing API key stopped the scan after the first domain; an orphan folder (translations, no `index.md`) was queued as MISSING for every language
