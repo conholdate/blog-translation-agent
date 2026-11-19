@@ -16,11 +16,15 @@ folder exists, languages supported — Status 'invalid' with the reason in Notes
 otherwise) and Step 2 closes them when it has retranslated their languages.
 Old EXTRA rows are dropped (EXTRA lives in the cleanup tab).
 
+Work order (order_rows): Priority, then first in, first out (sheet order) —
+except OUTDATED rows, which go newest post first (folder date).
+
 The sheet I/O around this lives in io_google_spreadsheet.py.
 """
 
+import re
 from datetime import datetime
-from typing import Dict, Iterable, List, Tuple
+from typing import Callable, Dict, Iterable, List, Tuple
 
 import config
 
@@ -118,6 +122,32 @@ def priority_rank(row: Row) -> int:
     return config.PRIORITY_RANK[p]
 
 
+_POST_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def post_date(slug) -> int:
+    """The post's date from its folder name (`2026-11-18-my-post` → 20261118); 0 when it has none."""
+    m = _POST_DATE.match(str(slug).strip())
+    return int("".join(m.groups())) if m else 0
+
+
+def order_rows(rows: list, rank: Callable, is_outdated: Callable, slug: Callable) -> list:
+    """
+    Work order of queue rows: by `rank` (Priority), sheet order within a rank —
+    first in, first out — except OUTDATED rows, which take the OUTDATED places
+    of their rank newest post first (folder date; undated folders last, ties
+    keep sheet order). MISSING and ISSUE rows never move, and a row whose
+    Priority was raised keeps its rank.
+    """
+    out = sorted(rows, key=rank)                      # stable: sheet order within a rank
+    for r in sorted({rank(row) for row in out}):
+        places = [i for i, row in enumerate(out) if rank(row) == r and is_outdated(row)]
+        newest = sorted((out[i] for i in places), key=lambda row: -post_date(slug(row)))
+        for i, row in zip(places, newest):
+            out[i] = row
+    return out
+
+
 def new_row(finding: Row, scan_date: str, langs: List[str]) -> Row:
     """A queue row for scan findings no open row tracks yet."""
     issue = finding[C_ISSUE]
@@ -163,7 +193,7 @@ def reconcile(queue: List[Row], findings: List[Row], scan_date: str,
     queue    — current domain-tab rows (sheet order).
     findings — what the scan flagged, one dict per (post, issue) with the
                flagged languages in Target Translations, in the order new rows
-               should be added (MISSING by folder, then OUTDATED newest first).
+               should be added (MISSING by folder, then OUTDATED newest post first).
                Only MISSING / OUTDATED findings are reconciled.
     posts / supported_langs — every (product, post folder) the scan saw (non-draft,
                with index.md) and the blog's languages; when given, rows the

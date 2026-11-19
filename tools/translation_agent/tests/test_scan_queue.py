@@ -180,6 +180,47 @@ class TestHelpers:
         assert q.to_values(rows, ["Mine", "Domain"]) == [["x", "d"], ["", "e"]]
         assert q.merged_header(["Mine", "Domain"], ["Domain", "Issue"]) == ["Mine", "Domain", "Issue"]
 
+    def test_post_date_from_folder_name(self):
+        assert q.post_date("2026-11-18-convert-svg") == 20261118
+        assert q.post_date(" 2022-09-22-x ") == 20220922
+        assert q.post_date("convert-svg") == 0 and q.post_date("") == 0
+
+
+class TestWorkOrder:
+    """order_rows(): Priority, FIFO within it — OUTDATED newest post first."""
+
+    @staticmethod
+    def order(rows):
+        out = q.order_rows(rows, rank=q.priority_rank,
+                           is_outdated=lambda r: r["Issue"] == O, slug=lambda r: r["Blog Post Directory"])
+        return [r["Blog Post Directory"] for r in out]
+
+    def test_outdated_newest_post_first(self):
+        rows = [qrow("2022-09-22-a", O), qrow("2026-11-01-b", O), qrow("2024-05-05-c", O)]
+        assert self.order(rows) == ["2026-11-01-b", "2024-05-05-c", "2022-09-22-a"]
+
+    def test_missing_and_issue_stay_first_in_first_out(self):
+        rows = [qrow("2022-01-01-old", M), qrow("2026-01-01-new", M),
+                qrow("2021-01-01-i1", I), qrow("2025-01-01-i2", I)]
+        assert self.order(rows) == ["2022-01-01-old", "2026-01-01-new", "2021-01-01-i1", "2025-01-01-i2"]
+
+    def test_undated_folders_last_and_ties_keep_sheet_order(self):
+        rows = [qrow("undated", O), qrow("2026-01-01-x", O, langs="de"), qrow("2026-01-01-x", O, langs="fr")]
+        out = q.order_rows(rows, rank=q.priority_rank, is_outdated=lambda r: r["Issue"] == O,
+                           slug=lambda r: r["Blog Post Directory"])
+        assert [(r["Blog Post Directory"], r["Target Translations"]) for r in out] == [
+            ("2026-01-01-x", "de"), ("2026-01-01-x", "fr"), ("undated", "de, fr")]
+
+    def test_priority_still_comes_first(self):
+        rows = [qrow("2026-01-01-new", O), qrow("2020-01-01-old", O, Priority="Urgent"),
+                qrow("2019-01-01-m", M)]
+        assert self.order(rows) == ["2020-01-01-old", "2019-01-01-m", "2026-01-01-new"]
+
+    def test_raised_outdated_row_keeps_its_place_among_missing(self):
+        rows = [qrow("2019-01-01-m1", M), qrow("2020-01-01-o-old", O, Priority="High"),
+                qrow("2021-01-01-m2", M), qrow("2026-01-01-o-new", O, Priority="High")]
+        assert self.order(rows) == ["2019-01-01-m1", "2026-01-01-o-new", "2021-01-01-m2", "2020-01-01-o-old"]
+
     def test_days_between(self):
         assert q.days_between("", "2026-10-29") == ""
         assert q.days_between("2026-10-21", "2026-10-29T03:00:00+00:00") == "8"

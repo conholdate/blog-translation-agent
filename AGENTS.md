@@ -8,7 +8,7 @@ explicitly approves it in the current session (see "User-Approved Changes").
 This file is a living document: agents keep it updated with the standing instructions agreed in
 discussions with the user (see "Standing Instructions").
 
-Last updated: 2026-11-18
+Last updated: 2026-11-19
 Authority: Shoaib Khan
 
 ---
@@ -92,7 +92,7 @@ Blog Translation Agent
        sheet (scan_queue.py; never cleared since 18 Nov 2026): languages no longer flagged are
        removed, rows with none left move to the `history` tab (completed rows only; dropped for
        blog.groupdocs.com), new findings are added at the bottom (MISSING by folder, then
-       OUTDATED newest English edit first) with Priority MISSING High / OUTDATED Low, Source
+       OUTDATED newest post first by folder date) with Priority MISSING High / OUTDATED Low, Source
        Scanner and Missing Since. People's edits (row splits, Priority incl. Urgent, Status such
        as `hold`, Comments, own columns) are kept. EXTRA rows go to the shared `cleanup` tab.
        Each row has a Notes reason (e.g. which English commit made it OUTDATED)
@@ -100,7 +100,8 @@ Blog Translation Agent
   Step 2 — Translate
     1. Read the queue (domain tab) and the domain's `cleanup` rows; no fallback to the old
        per-domain sheets (no longer written). Open rows only (Status blank / pending / partial),
-       by Priority (Urgent, High, Normal, Low; blank → issue default), then sheet order — a post
+       by Priority (Urgent, High, Normal, Low; blank → issue default), then sheet order (FIFO),
+       except OUTDATED rows, which go newest post first (folder date) — a post
        may be split by hand over several rows (e.g. to translate 2 languages first). OUTDATED
        and ISSUE rows overwrite the existing translation. Budget: limit (posts' worth) × the
        blog's languages; a row that doesn't fit is cut, the rest stays queued. No new language
@@ -200,3 +201,5 @@ with the date, and update `Last updated` above.
 | 2026-11-18 | Run budget is in **translations**, not posts: limit (1/2/3, "posts' worth", keep ≤ 3) × the blog's language count, with a **5 h** time limit (no new language after it). Rows that don't fit are cut, not skipped. |
 | 2026-11-18 | Scan at 00:00 and 12:00 UTC; the five maintained blogs' translations start when a scheduled scan finishes (workflow_run, not after manual or cancelled scans), limit 2 each — two runs per blog a day. One run per blog at a time (concurrency). |
 | 2026-11-18 | Retranslation requests from people or agents go in as ISSUE rows via `queue_add.py` / `add_to_queue()` (no duplicate languages); the scan marks unmatched rows `invalid`. |
+| 2026-11-19 | Queue order within a priority: MISSING and ISSUE first in, first out (sheet order); OUTDATED newest post first (folder date — a 2026 post before a 2022 one). |
+| 2026-11-19 | Keep every operational script (resets, re-sorts, one-off sheet fixes) in the repo with tests and docs, never only in a temp/scratch folder — nothing may be lost. Scripts that change sheets are dry run by default, back up what they change, and record their results in the docs. |

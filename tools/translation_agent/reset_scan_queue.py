@@ -120,7 +120,7 @@ def main(argv=None) -> int:
     if cleanup:
         clear_to_header(cleanup, config.HEADERS_CLEANUP)
     print(f"✅ Cleared {len(domain_tabs)} domain tab(s){' and the cleanup tab' if cleanup else ''}.")
-    print("\nNext: run the scan (workflow 'Scan Missing Translations', manual run) to rebuild the queue.")
+    print("\nNext: run the scan (workflow 'Daily Blogs Scan - Missing Translations', manual run) to rebuild the queue.")
     return 0
 
 

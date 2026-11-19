@@ -35,6 +35,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `docs/PIPELINE_MAP.html` — visual pipeline map
 
 ### Changed
+- **OUTDATED rows go newest post first** (19 Nov 2026): within a priority, Step 2 works OUTDATED rows by the post date in the folder name (`scan_queue.post_date()` / `order_rows()`; undated folders last), and the scanner adds new OUTDATED rows in that order (same date → newest English edit). MISSING and ISSUE rows stay first in, first out. Why: the "newest English edit first" order tied on the hundreds of posts the optimizer edited the same day and fell back to folder order, so 2022 posts came before 2026 ones. Tests in `test_scan_queue.py` / `test_outdated_rows.py`
+- `resort_queue.py` — re-sorts the OUTDATED rows of the domain tabs newest post first by hand (only OUTDATED rows move; dry run unless `--apply`; `--domain`; changed tabs backed up as `bak-…`), so the sheet reads in work order. Tests: `test_resort_queue.py`
+- `reset_scan_queue.py`'s closing hint names the scan workflow correctly ("Daily Blogs Scan - Missing Translations")
 - Step 2 orders open queue rows by Priority, then sheet order (`queue_order()` replaces `missing_first()`); a tab without Priority falls back to the issue's default, so old-format tabs still work
 - Step 2's per-post comments go to the post's open queue rows sharing a language with the run (`append_queue_comments`), any issue; they move to `history` with the row
 - `history` tab holds completed rows only (history `Scan Date` = first flagged); gains `Priority` and `Source` columns; blog.groupdocs.com closed rows are dropped, not historied

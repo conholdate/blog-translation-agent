@@ -51,6 +51,12 @@ class TestRowHelpers:
         rows = [make_row("m1", M), make_row("o1", O, priority="urgent")]
         assert [r[2] for r in queue_order(rows)] == ["o1", "m1"]
 
+    def test_outdated_newest_post_first_missing_first_in_first_out(self):
+        rows = [make_row("2022-09-22-o-old", O), make_row("2026-11-01-m-new", M),
+                make_row("2026-10-01-o-new", O), make_row("2021-01-01-m-old", M)]
+        assert [r[2] for r in queue_order(rows)] == [
+            "2026-11-01-m-new", "2021-01-01-m-old", "2026-10-01-o-new", "2022-09-22-o-old"]
+
     def test_rows_that_are_not_open_are_skipped(self):
         rows = [make_row("a", M, status="invalid"), make_row("b", M, status="hold"),
                 make_row("c", M, status="partial"), make_row("d", M, status="pending"),

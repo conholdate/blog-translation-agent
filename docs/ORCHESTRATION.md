@@ -176,6 +176,21 @@ The next scan rebuilds the queue (a scan against an empty queue is a rebuild): M
 OUTDATED (Low), Missing Since = that day. A translation run between the reset and that scan finds an
 empty queue and does nothing.
 
+Applied 18 Nov 2026 (after the day's runs had pushed): 1,134 history rows deleted, 361 completed rows
+kept (aspose.cloud 133, aspose.com 121, groupdocs.cloud 58, conholdate.com 47, conholdate.cloud 2);
+backups `bak-20261118-1739-<tab>` (local time). The manual scan then rebuilt the queue: aspose.com
+434 rows / 8,819 languages (2 MISSING), conholdate.com 222 / 3,767, groupdocs.com 242 / 3,376
+(35 MISSING), aspose.cloud 76 / 1,553, groupdocs.cloud 35 / 624, conholdate.cloud 0; cleanup empty.
+
+### Re-sorting OUTDATED rows (19 Nov 2026)
+
+`resort_queue.py` (by hand, when no translation run is in progress; dry run unless `--apply`;
+`--domain` for one tab) moves the OUTDATED rows of the domain tabs newest post first, among the places
+OUTDATED rows hold — MISSING, ISSUE, held and invalid rows don't move and no cell changes. A changed
+tab is backed up first as `bak-YYYYMMDD-HHMM-<tab>`. Step 2 sorts the queue itself
+(`scan_queue.order_rows()`), so this only makes the sheet read in work order; it was first used
+because the queue rebuilt on 18 Nov listed OUTDATED rows by English edit (2022 posts first).
+
 ### Options
 
 | Option | Meaning |
@@ -214,7 +229,17 @@ translator.py  →  start_translation()
 - `queue_order()`: only **open** rows (Status blank / `pending` / `partial`), sorted by Priority —
   Urgent, High, Normal, Low; a blank or unknown Priority (e.g. a tab from before 18 Nov 2026) falls
   back to the issue's default (MISSING High, ISSUE Normal, OUTDATED Low). Rows of the same priority
-  keep their **sheet order**, so a split post ("these 2 languages first") still runs in that order.
+  keep their **sheet order** — first in, first out — so a split post ("these 2 languages first")
+  still runs in that order.
+- **OUTDATED rows go newest post first** (since 19 Nov 2026, `scan_queue.order_rows()`): within a
+  priority they take the places OUTDATED rows hold, sorted by the post date in the folder name
+  (`2026-…` before `2022-…`; folders without a date last; same date → sheet order). MISSING and ISSUE
+  rows never move (FIFO), and an OUTDATED row raised to High keeps its place among the High rows.
+  The scanner also adds new OUTDATED rows newest post first (same post date → most recently edited
+  English first). Why: the old "newest English edit first" order tied on hundreds of posts the
+  optimizer edited the same day and fell back to folder order, putting 2022 posts first; newer posts
+  get more traffic. To bring an old post forward, raise its Priority — moving the row up in the sheet
+  no longer puts it ahead of newer OUTDATED posts.
 - **Language budget** (since 18 Nov 2026): `--limit` is "posts' worth" — the run translates up to
   `limit × the blog's language count` languages (`language_budget()`; e.g. 2 × 21 = 42 on blog.aspose.com,
   3 × 17 = 51 on blog.conholdate.com), taken from the ordered queue (`apply_language_budget()`). Why:
@@ -315,7 +340,7 @@ start_translation(domain, author, limit)
 ├── filter_valid_rows(posts_list)            # MISSING + OUTDATED rows with required fields
 ├── filter by author / product
 ├── drop_existing_translations()             # MISSING rows only
-├── queue_order()                            # open rows, by Priority then sheet order
+├── queue_order()                            # open rows, by Priority then sheet order (OUTDATED newest post first)
 ├── limit
 │
 └── TranslationOrchestrator.translate_files(posts_list)
@@ -363,7 +388,8 @@ The first scans with the OUTDATED check flag a large backlog (local clones of 13
 | blog.groupdocs.com *(report only)* | 207 (+34 MISSING) | 3,170 | 80 / 191 / 202 | Vladimir Litvinchik 155 |
 
 763 posts (~14,650 files) on the 5 maintained blogs. At 3 posts per run (~1.5 h per post) that is
-~250 runs; the newest-first order clears the last 30 days (~130 posts) in ~45 runs. The optimizer
+~250 runs. OUTDATED rows go newest post first (by post date since 19 Nov 2026), so recent posts are
+retranslated before the old backlog. The optimizer
 adds ~3 outdated posts a day on blog.aspose.com alone. Since 18 Nov 2026 each blog gets **two runs a
 day of 2 posts' worth** (~42 translations each on a 21-language blog, ~3 h) — ~84 translations a day
 instead of ≤ 63 — and OUTDATED rows (Low) run only once nothing of higher priority is left. Low can

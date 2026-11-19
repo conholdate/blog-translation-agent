@@ -1624,9 +1624,13 @@ def is_open_row(row: List[Any]) -> bool:
 def queue_order(posts_list: List[List[Any]]) -> List[List[Any]]:
     """
     Open rows only, by priority; rows of the same priority keep their sheet
-    order (so a post split by hand — "these 2 languages first" — still works).
+    order — first in, first out (so a post split by hand — "these 2 languages
+    first" — still works) — except OUTDATED rows, which take their places
+    newest post first (folder date), so a 2026 post goes before a 2022 one.
     """
-    return sorted((r for r in posts_list if is_open_row(r)), key=row_priority_rank)
+    return scan_queue.order_rows([r for r in posts_list if is_open_row(r)],
+                                 rank=row_priority_rank, is_outdated=is_outdated_row,
+                                 slug=lambda r: r[2])
 
 
 def filter_valid_rows(posts_list: List[List[Any]]) -> List[List[Any]]:
@@ -1828,6 +1832,7 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
                 detail(f"      already translated: {row[1]}/{row[2]}")
 
         # Open rows only, by Priority (Urgent, High, Normal, Low), then sheet order
+        # (first in, first out) — OUTDATED rows newest post first
         if posts_list:
             posts_list = queue_order(posts_list)
 

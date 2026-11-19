@@ -20,6 +20,7 @@ from git_repo_utils import clone_or_pull_repos
 from io_google_spreadsheet import write_to_google_spreadsheet, sync_domain_queue, replace_cleanup_rows
 from translation_files_managers import delete_translation_files
 from translator import start_translation
+from scan_queue import post_date
 from scan_helpers import (read_post_meta, git_history, outdated_langs,
                           missing_note, extra_note, outdated_note)
 
@@ -216,7 +217,7 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
             handles_list = config.domains_data[domain][config.KEY_MENTIONS_AUTHOR]
 
             findings         = []     # MISSING / OUTDATED, one dict per (post, issue) — reconciled into the queue
-            outdated_rows    = []     # (index.md commit time, finding) — sorted newest first below
+            outdated_rows    = []     # (index.md commit time, finding) — sorted newest post first below
             extra_rows       = []     # EXTRA → the cleanup tab
             missing_or_extra = 0      # posts with a MISSING/EXTRA issue (summary count)
             for item in result:
@@ -262,10 +263,12 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                     print(f"\n⚠️ Handle not found for: {person or '(no author in index.md)'}")
 
             # New queue rows are added in this order: MISSING by post folder, then
-            # OUTDATED, most recently edited English first. Existing rows keep
-            # their place; Step 2 orders by Priority, then sheet order.
+            # OUTDATED newest post first (folder date; same date → most recently
+            # edited English first). Existing rows keep their place; Step 2 orders
+            # by Priority, then sheet order (first in, first out), OUTDATED newest post first.
             findings.sort(key=lambda f: f[config.KEY_DIR_BASE])
-            outdated_rows.sort(key=lambda t: (-t[0], t[1][config.KEY_DIR_BASE]))
+            outdated_rows.sort(key=lambda t: (-post_date(t[1][config.KEY_DIR_BASE]), -t[0],
+                                              t[1][config.KEY_DIR_BASE]))
             findings += [f for _, f in outdated_rows]
             extra_rows.sort(key=lambda f: f[config.KEY_DIR_BASE])
             print(f"{len(outdated_rows)} outdated  >  ", end=' ', flush=True)

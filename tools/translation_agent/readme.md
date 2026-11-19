@@ -149,7 +149,8 @@ python tools/translation_agent/scan_missing_translations.py --domain blog.aspose
 
 Reads the queue (domain tab) and translates posts into missing languages (`MISSING` rows), and
 overwrites translations for `OUTDATED` rows and `ISSUE` rows (retranslation requests). Open rows
-only, by Priority — Urgent, High (MISSING), Normal (ISSUE), Low (OUTDATED) — then sheet order. The
+only, by Priority — Urgent, High (MISSING), Normal (ISSUE), Low (OUTDATED) — then sheet order (first
+in, first out), except OUTDATED rows, which go newest post first (folder date). The
 run translates up to `--limit` × the blog's languages (a row that doesn't fit is cut; the rest stays
 queued) and starts no new language after `--time-limit` minutes (default 300). Translated languages
 are closed in the queue right after each post.
@@ -222,6 +223,7 @@ tools/translation_agent/
 ├── scan_queue.py                  # Queue reconcile rules (pure logic, no sheet access)
 ├── queue_add.py                   # CLI: request a retranslation (ISSUE row)
 ├── reset_scan_queue.py            # One-time queue reset (18 Nov 2026; dry run unless --apply)
+├── resort_queue.py                # Re-sort OUTDATED queue rows newest post first (dry run unless --apply)
 ├── git_repo_utils.py              # Clone / pull blog repos via GitHub PAT
 ├── io_google_spreadsheet.py       # Google Sheets: queue sync / read, cleanup, history, comments, add_to_queue
 ├── build_commit_message.py        # Commit title/body from staged files (Translate / Retranslate / Remove)
