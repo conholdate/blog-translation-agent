@@ -190,6 +190,12 @@ OUTDATED rows hold — MISSING, ISSUE, held and invalid rows don't move and no c
 tab is backed up first as `bak-YYYYMMDD-HHMM-<tab>`. Step 2 sorts the queue itself
 (`scan_queue.order_rows()`), so this only makes the sheet read in work order; it was first used
 because the queue rebuilt on 18 Nov listed OUTDATED rows by English edit (2022 posts first).
+Applied 19 Nov 2026 (no run in progress): aspose.com 430 rows moved, groupdocs.com 207,
+conholdate.com 217, aspose.cloud 72, groupdocs.cloud 31; conholdate.cloud empty. Backups
+`bak-20261119-1417-<tab>`; checked afterwards: same rows as the backups, OUTDATED newest post first.
+Both sets of backup tabs (`bak-20261118-1739-*`, 7 tabs, and `bak-20261119-1417-*`, 5 tabs) were
+deleted on 19 Nov 2026 at the owner's request once the results were checked; Google Sheets version
+history still holds the earlier states.
 
 ### Options
 
