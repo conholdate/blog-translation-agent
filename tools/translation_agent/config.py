@@ -29,6 +29,11 @@ DEFAULT_TRANSLATION_LIMIT = 3   # "posts' worth": the run's budget is limit × t
 # A run starts no new language after this many minutes, then finishes and commits
 # what it has: GitHub kills a job at 6 h, and a killed job commits nothing.
 TRANSLATION_TIME_LIMIT_MIN = 300
+# Settling time: a post is translated only once its English index.md has gone
+# this long without a commit (new and updated posts alike), so errors in the
+# English article can be fixed before they are copied into every language.
+# Urgent and ISSUE rows don't wait. Posts without git history count as ready.
+TRANSLATION_SETTLE_HOURS = 72
 
 # CONSOLIDATED SCAN SHEET (single sheet, one tab per domain)
 TRANSLATION_SCAN_SHEET_ID   = os.getenv("TRANSLATION_SCAN_SHEET_ID", "")
@@ -212,6 +217,7 @@ KEY_PRIORITY        = "Priority"
 KEY_SOURCE          = "Source"          # who flagged the row: Scanner, Manual, or an agent's name
 KEY_COMMENTS        = "Comments"        # per-run translation results (Step 2)
 KEY_COMPLETED_DATE  = "Completed Date"
+KEY_READY_AFTER     = "Ready After"     # UTC: last English commit + TRANSLATION_SETTLE_HOURS (scanner rows)
 
 PRIORITY_URGENT     = "Urgent"          # set by people only
 PRIORITY_HIGH       = "High"
@@ -269,7 +275,7 @@ HEADERS_SCAN_RESULTS = HEADERS_MISSING_TRANSLATIONS + [KEY_NOTES]
 # may reorder them or add their own; missing ones are added by the scanner.
 HEADERS_QUEUE = [
     KEY_SCAN_DATE, KEY_MISSING_SINCE, KEY_DAYS_MISSING, KEY_PRIORITY,
-] + HEADERS_MISSING_TRANSLATIONS + [KEY_SOURCE, KEY_NOTES, KEY_COMMENTS]
+] + HEADERS_MISSING_TRANSLATIONS + [KEY_SOURCE, KEY_NOTES, KEY_COMMENTS, KEY_READY_AFTER]
 
 # The cleanup tab (EXTRA rows of every domain; rebuilt per domain each scan)
 HEADERS_CLEANUP = [KEY_SCAN_DATE] + HEADERS_MISSING_TRANSLATIONS + [KEY_NOTES]

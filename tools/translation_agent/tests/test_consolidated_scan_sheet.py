@@ -60,21 +60,30 @@ class TestReadDomainScanRows:
         ])
         self._patch(monkeypatch, ws)
         rows, scan_date = gs.read_domain_scan_rows(DOMAIN)
-        assert rows == [_scan_row("p1") + ["Urgent"]]
+        assert rows == [_scan_row("p1") + ["Urgent", ""]]
         assert scan_date.startswith("2026-10-29T03:49")
 
     def test_old_tab_without_priority_reads_blank_priority(self, monkeypatch):
         ws = FakeWorksheet([["Scan Date"] + HEADERS, ["2026-10-29"] + _scan_row("p1")])
         self._patch(monkeypatch, ws)
         rows, _ = gs.read_domain_scan_rows(DOMAIN)
-        assert rows == [_scan_row("p1") + [""]]
+        assert rows == [_scan_row("p1") + ["", ""]]
 
     def test_columns_found_by_name_not_position(self, monkeypatch):
         header = ["Priority", "Notes"] + HEADERS[::-1]
         ws = FakeWorksheet([header, ["Low", "n"] + _scan_row("p1")[::-1]])
         self._patch(monkeypatch, ws)
         rows, _ = gs.read_domain_scan_rows(DOMAIN)
-        assert rows == [_scan_row("p1") + ["Low"]]
+        assert rows == [_scan_row("p1") + ["Low", ""]]
+
+    def test_ready_after_is_returned_as_column_11(self, monkeypatch):
+        ws = FakeWorksheet([
+            ["Ready After", "Priority"] + HEADERS,
+            ["2026-11-22 14:05 UTC", "High"] + _scan_row("p1"),
+        ])
+        self._patch(monkeypatch, ws)
+        rows, _ = gs.read_domain_scan_rows(DOMAIN)
+        assert rows[0][10:] == ["High", "2026-11-22 14:05 UTC"]
 
     def test_order_preserved_and_blank_rows_skipped(self, monkeypatch):
         ws = FakeWorksheet([

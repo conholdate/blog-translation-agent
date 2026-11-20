@@ -8,6 +8,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- **3-day settling time** (20 Nov 2026): a post is translated only once **72 h have passed since the last commit to its English `index.md`**. The rule is the same for new (MISSING) and updated or optimised (OUTDATED) posts, so errors in the English article can be fixed before they are copied into every language. Details:
+  - The scanner writes a new queue column **Ready After** (last English commit + `config.TRANSLATION_SETTLE_HOURS` = 72, in UTC, `scan_queue.ready_after()`). Every scan refreshes it, so a new English edit restarts the wait.
+  - While a post waits, Notes end with `⏳ Waiting until <time> UTC (72 h after the last English edit)` (`scan_helpers.waiting_note()`).
+  - Step 2 holds such rows back (`translator.split_settled()` / `scan_queue.is_settled()`), before the language budget, so they don't use it. The run logs `Waiting: n row(s)`.
+  - **Urgent** rows (forced by a person) and **ISSUE** rows (reviewed requests) don't wait. A blank Ready After counts as ready: no git history (local mirror), manual rows, and tabs from before the column existed.
+  - Step 2 now reads Ready After as column 11 (`QUEUE_READ_COLUMNS`).
+  - Tests: `test_settling_time.py`, plus the waiting-note and Ready After cases in `test_scan_missing_translations.py` and the column-11 read in `test_consolidated_scan_sheet.py`.
 - **Persistent translation queue** (18 Nov 2026): the domain tab is no longer cleared and rewritten by each scan — it is reconciled (`scan_queue.py`, `io_google_spreadsheet.sync_domain_queue()`): languages no longer flagged are removed (Status `partial`), rows with nothing left move to `history` as `completed`, new findings are added at the bottom. Row splits, order, Priority, Status, Comments and people's own columns survive. Why: the full rewrite wiped manual edits and made non-derivable rows (manual / agent ISSUE rows) impossible
 - Queue columns `Priority` (Urgent / High / Normal / Low — defaults MISSING High, ISSUE Normal, OUTDATED Low; set on new rows only, never overwritten; Urgent is for people), `Source` (Scanner / Manual / agent name) and `Comments`; `Missing Since` is now kept on the queue row (first flagged, never changed)
 - Queue Status `hold` (or any value other than blank / `pending` / `partial`) skips a row in Step 2 and keeps the scan from closing or re-adding it

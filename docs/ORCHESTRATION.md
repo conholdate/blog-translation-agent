@@ -94,7 +94,7 @@ What goes in the queue:
 
 | Queue row | Result |
 |---|---|
-| MISSING/OUTDATED row, all its languages still flagged | kept as is; Scan Date, Days Missing, Notes, URL, Author refreshed |
+| MISSING/OUTDATED row, all its languages still flagged | kept as is; Scan Date, Days Missing, Notes, URL, Author, Ready After refreshed |
 | … some languages no longer flagged | those languages removed, Count updated, Status `partial` |
 | … no language left | **closed**: removed from the queue and appended to `history` as `completed` |
 | flagged languages no open row tracks | **new row at the bottom** (Priority by issue, Source `Scanner`, Missing Since = today) |
@@ -124,7 +124,14 @@ What goes in the queue:
 **1. Domain tab = the queue** (`TRANSLATION_SCAN_SHEET_ID`, tab named by domain), columns
 (`config.HEADERS_QUEUE`): Scan Date, Missing Since, Days Missing, **Priority**, Domain, Product,
 Blog Post Directory, Blog Post URL, Author, Issue, Count, Target Translations, Action, Status,
-**Source**, Notes, **Comments**.
+**Source**, Notes, **Comments**, **Ready After**.
+
+**Ready After** (since 20 Nov 2026): on MISSING / OUTDATED rows the scanner writes the English
+`index.md`'s last commit + 72 h (`scan_queue.ready_after()`, e.g. `2026-11-22 14:05 UTC`). Each scan
+refreshes it, on held rows too. While that time is ahead, the row's Notes end with
+`⏳ Waiting until <time> UTC (72 h after the last English edit)` (`scan_helpers.waiting_note()`).
+It is blank when the blog checkout has no git history, and blank on ISSUE rows (they don't wait).
+Step 2 skips a row until then (see Queue rules → Settling time).
 
 | Status | Meaning |
 |---|---|
@@ -246,6 +253,17 @@ translator.py  →  start_translation()
   optimizer edited the same day and fell back to folder order, putting 2022 posts first; newer posts
   get more traffic. To bring an old post forward, raise its Priority — moving the row up in the sheet
   no longer puts it ahead of newer OUTDATED posts.
+- **Settling time** (since 20 Nov 2026, `split_settled()` / `scan_queue.is_settled()`): a row is
+  held back until its **Ready After** (column 11 of the read) has passed: the English `index.md`'s
+  last commit + `config.TRANSLATION_SETTLE_HOURS` (72 h). The rule is the same for new (MISSING)
+  and updated or optimised (OUTDATED) posts. Each scan refreshes Ready After, so a new English edit
+  restarts the wait. **Urgent** rows (forced by a person) and **ISSUE** rows (reviewed retranslation
+  requests) don't wait. A blank or unreadable Ready After (no git history, e.g. the local mirror;
+  manual rows; tabs from before the column existed) means ready. Waiting rows are dropped **before**
+  the budget, so they don't use it. They stay in the queue untouched, and the run logs
+  `Waiting: n row(s)` (each row in verbose). Why: the owner's request. Errors found in a fresh
+  English article (often fixed in the first days) are corrected before they are copied into
+  every language, which saves fix-ups and retranslation cost.
 - **Language budget** (since 18 Nov 2026): `--limit` is "posts' worth" — the run translates up to
   `limit × the blog's language count` languages (`language_budget()`; e.g. 2 × 21 = 42 on blog.aspose.com,
   3 × 17 = 51 on blog.conholdate.com), taken from the ordered queue (`apply_language_budget()`). Why:
@@ -346,6 +364,7 @@ start_translation(domain, author, limit)
 ├── filter_valid_rows(posts_list)            # MISSING + OUTDATED rows with required fields
 ├── filter by author / product
 ├── drop_existing_translations()             # MISSING rows only
+├── split_settled()                          # hold back rows whose Ready After hasn't passed (not Urgent / ISSUE)
 ├── queue_order()                            # open rows, by Priority then sheet order (OUTDATED newest post first)
 ├── limit
 │

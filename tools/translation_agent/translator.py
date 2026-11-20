@@ -6,6 +6,7 @@ Translates Papermod themed blog posts using agent-based architecture
 import yaml
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Tuple
 from openai import OpenAI
@@ -1616,6 +1617,30 @@ def row_priority_rank(row: List[Any]) -> int:
     })
 
 
+def is_settled_row(row: List[Any], now: datetime = None) -> bool:
+    """
+    Settling time: False while the row's Ready After (col 11 — last English
+    commit + config.TRANSLATION_SETTLE_HOURS) is still ahead, so a new or
+    just-edited English post can be fixed before it is translated. Urgent and
+    ISSUE rows never wait; a blank Ready After (no git history, older tab,
+    short row) means ready.
+    """
+    return scan_queue.is_settled({
+        config.KEY_ISSUE      : row[5] if len(row) > 5 else "",
+        config.KEY_PRIORITY   : row[10] if len(row) > 10 else "",
+        config.KEY_READY_AFTER: row[11] if len(row) > 11 else "",
+    }, now)
+
+
+def split_settled(posts_list: List[List[Any]], now: datetime = None
+                  ) -> Tuple[List[List[Any]], List[List[Any]]]:
+    """(rows ready to translate, rows still waiting) — waiting rows stay queued untouched."""
+    ready, waiting = [], []
+    for row in posts_list:
+        (ready if is_settled_row(row, now) else waiting).append(row)
+    return ready, waiting
+
+
 def is_open_row(row: List[Any]) -> bool:
     """Status (col 9) blank / pending / partial; 'invalid', 'hold' or anything else is skipped."""
     return scan_queue.is_open({config.KEY_STATUS: row[9] if len(row) > 9 else ""})
@@ -1830,6 +1855,19 @@ def start_translation(args=None, posts_list_to_translate: List[List[Any]]=None):
             posts_list, already_done = drop_existing_translations(posts_list)
             for row in already_done:
                 detail(f"      already translated: {row[1]}/{row[2]}")
+
+        # ======================
+        # SETTLING TIME — no translation until the English index.md has gone
+        # TRANSLATION_SETTLE_HOURS without a commit (Urgent / ISSUE rows don't wait).
+        # Before the budget, so waiting rows don't use it; they stay queued.
+        # ======================
+        if posts_list:
+            posts_list, waiting = split_settled(posts_list)
+            if waiting:
+                info(f"    Waiting: {len(waiting)} row(s) — English edited less than "
+                     f"{config.TRANSLATION_SETTLE_HOURS} h ago (see Ready After)")
+                for row in waiting:
+                    detail(f"      waiting: {row[1]}/{row[2]} · {row[5]} · ready after {row[11]}")
 
         # Open rows only, by Priority (Urgent, High, Normal, Low), then sheet order
         # (first in, first out) — OUTDATED rows newest post first

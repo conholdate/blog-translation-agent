@@ -8,7 +8,7 @@ explicitly approves it in the current session (see "User-Approved Changes").
 This file is a living document: agents keep it updated with the standing instructions agreed in
 discussions with the user (see "Standing Instructions").
 
-Last updated: 2026-11-19
+Last updated: 2026-11-20
 Authority: Shoaib Khan
 
 ---
@@ -93,7 +93,7 @@ Blog Translation Agent
        removed, rows with none left move to the `history` tab (completed rows only; dropped for
        blog.groupdocs.com), new findings are added at the bottom (MISSING by folder, then
        OUTDATED newest post first by folder date) with Priority MISSING High / OUTDATED Low, Source
-       Scanner and Missing Since. People's edits (row splits, Priority incl. Urgent, Status such
+       Scanner, Missing Since and Ready After (last English commit + 72 h). People's edits (row splits, Priority incl. Urgent, Status such
        as `hold`, Comments, own columns) are kept. EXTRA rows go to the shared `cleanup` tab.
        Each row has a Notes reason (e.g. which English commit made it OUTDATED)
 
@@ -102,7 +102,10 @@ Blog Translation Agent
        per-domain sheets (no longer written). Open rows only (Status blank / pending / partial),
        by Priority (Urgent, High, Normal, Low; blank → issue default), then sheet order (FIFO),
        except OUTDATED rows, which go newest post first (folder date) — a post
-       may be split by hand over several rows (e.g. to translate 2 languages first). OUTDATED
+       may be split by hand over several rows (e.g. to translate 2 languages first). Settling
+       time: a row waits until its Ready After (last English index.md commit + 72 h,
+       TRANSLATION_SETTLE_HOURS; refreshed by every scan); Urgent and ISSUE rows don't wait,
+       blank = ready; waiting rows don't use the budget. OUTDATED
        and ISSUE rows overwrite the existing translation. Budget: limit (posts' worth) × the
        blog's languages; a row that doesn't fit is cut, the rest stays queued. No new language
        starts after 5 h (TRANSLATION_TIME_LIMIT_MIN), so the run still commits before GitHub's
@@ -203,3 +206,4 @@ with the date, and update `Last updated` above.
 | 2026-11-18 | Retranslation requests from people or agents go in as ISSUE rows via `queue_add.py` / `add_to_queue()` (no duplicate languages); the scan marks unmatched rows `invalid`. |
 | 2026-11-19 | Queue order within a priority: MISSING and ISSUE first in, first out (sheet order); OUTDATED newest post first (folder date — a 2026 post before a 2022 one). |
 | 2026-11-19 | Keep every operational script (resets, re-sorts, one-off sheet fixes) in the repo with tests and docs, never only in a temp/scratch folder — nothing may be lost. Scripts that change sheets are dry run by default, back up what they change, and record their results in the docs. |
+| 2026-11-20 | Settling time: translate a post only when **72 h (3 days) have passed since the last commit to its English `index.md`**. The same rule applies to new and updated/optimised posts, so English errors are fixed before they reach translations. Priority `Urgent` skips the wait; ISSUE rows don't wait; a post without git history counts as ready. |

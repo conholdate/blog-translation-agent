@@ -172,6 +172,29 @@ class TestNotes:
         assert note == ('English updated 2026-03-01 by optimizer-agent ("Optimized Blog Posts"); '
                         "translations from 2026-01-02")
 
+    def test_fresh_english_commit_adds_waiting_line(self, scanner, tmp_path):
+        """Settling time: a post committed less than 72 h ago says when it will be translated."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        for args in (["init", "-q"], ["config", "user.name", "Jane"], ["config", "user.email", "j@example.com"]):
+            _git(repo, *args)
+        _post(repo, "2026-01-01-new", {"index.md": EN.format(slug="new")})
+        _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "publish")      # now
+        note = _scan(scanner, repo)["2026-01-01-new"][scanner.KEY_ROW_NOTES][config.ISSUE_MISSING]
+        first, second = note.split("\n")
+        assert first == "New post"
+        assert second.startswith("⏳ Waiting until ") and second.endswith(
+            f"UTC ({config.TRANSLATION_SETTLE_HOURS} h after the last English edit)")
+
+    def test_old_english_commit_has_no_waiting_line(self, scanner, tmp_path):
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        for args in (["init", "-q"], ["config", "user.name", "Jane"], ["config", "user.email", "j@example.com"]):
+            _git(repo, *args)
+        _post(repo, "2026-01-01-old", {"index.md": EN.format(slug="old")})
+        _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "publish", date="2026-01-01T00:00:00+00:00")
+        assert _scan(scanner, repo)["2026-01-01-old"][scanner.KEY_ROW_NOTES] == {config.ISSUE_MISSING: "New post"}
+
 
 class TestFixAcrossSomeLanguages:
     def test_untouched_translations_still_outdated_with_note(self, scanner, tmp_path):
@@ -247,6 +270,12 @@ class TestQueueWrite:
         calls, _ = run()
         (row,) = calls["summary"]
         assert row[1] == config.DOMAIN_ASPOSE_COM and row[4] == "https://sheet#gid=1"
+
+    def test_findings_carry_ready_after(self, run, tmp_path):
+        # tmp_path isn't a git checkout: no commit time → blank Ready After (ready)
+        _post(tmp_path, "2024-01-01-a", {"index.md": EN.format(slug="a")})
+        calls, _ = run()
+        assert calls["queue"][0][config.KEY_READY_AFTER] == ""
 
     def test_nothing_flagged_still_reconciles_with_empty_findings(self, run, tmp_path):
         _post(tmp_path, "2024-01-01-a", {"index.md": EN.format(slug="a"), "index.de.md": "x", "index.fr.md": "x"})

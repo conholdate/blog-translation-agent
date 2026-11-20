@@ -150,7 +150,10 @@ python tools/translation_agent/scan_missing_translations.py --domain blog.aspose
 Reads the queue (domain tab) and translates posts into missing languages (`MISSING` rows), and
 overwrites translations for `OUTDATED` rows and `ISSUE` rows (retranslation requests). Open rows
 only, by Priority — Urgent, High (MISSING), Normal (ISSUE), Low (OUTDATED) — then sheet order (first
-in, first out), except OUTDATED rows, which go newest post first (folder date). The
+in, first out), except OUTDATED rows, which go newest post first (folder date). A row waits until
+72 h after the last commit to its English `index.md` (column **Ready After**,
+`config.TRANSLATION_SETTLE_HOURS`), for new and updated posts alike, so English errors are fixed
+before translation. Urgent and ISSUE rows don't wait, and waiting rows don't use the budget. The
 run translates up to `--limit` × the blog's languages (a row that doesn't fit is cut; the rest stays
 queued) and starts no new language after `--time-limit` minutes (default 300). Translated languages
 are closed in the queue right after each post.
@@ -300,7 +303,8 @@ Scan results are automatically saved to Google Sheets with:
 - Direct links to details
 
 The domain tab (the queue) also has Scan Date, Missing Since (first flagged, never changed), Days
-Missing, Priority, Source and Comments (Step 2 results). Closed rows move to the `history` tab
+Missing, Priority, Source, Comments (Step 2 results) and Ready After (last English commit + 72 h, in
+UTC; Step 2 waits until then; Notes add `⏳ Waiting until …` meanwhile). Closed rows move to the `history` tab
 (completed rows only; none for blog.groupdocs.com). EXTRA rows are in the `cleanup` tab.
 
 **Summary Sheet:** Aggregated daily reports across all domains

@@ -19,12 +19,18 @@ Old EXTRA rows are dropped (EXTRA lives in the cleanup tab).
 Work order (order_rows): Priority, then first in, first out (sheet order) —
 except OUTDATED rows, which go newest post first (folder date).
 
+Settling time: scanner rows carry 'Ready After' (last English commit +
+config.TRANSLATION_SETTLE_HOURS, refreshed by every scan). Step 2 skips a row
+until then (is_settled), so errors in a new or just-edited English post can
+be fixed before they are translated. Urgent and ISSUE rows don't wait; a
+blank Ready After (no git history, manual row, old tab) means ready.
+
 The sheet I/O around this lives in io_google_spreadsheet.py.
 """
 
 import re
-from datetime import datetime
-from typing import Callable, Dict, Iterable, List, Tuple
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Dict, Iterable, List, Optional, Tuple
 
 import config
 
@@ -122,6 +128,48 @@ def priority_rank(row: Row) -> int:
     return config.PRIORITY_RANK[p]
 
 
+READY_AFTER_FORMAT = "%Y-%m-%d %H:%M UTC"
+
+
+def ready_after(en_commit_time: int, hours: int = None) -> str:
+    """
+    'Ready After' for a post whose English index.md was last committed at
+    en_commit_time (unix seconds): that time + the settling hours, e.g.
+    '2026-11-22 14:05 UTC'. '' when there is no commit time (no git history).
+    """
+    if not en_commit_time:
+        return ""
+    hours = config.TRANSLATION_SETTLE_HOURS if hours is None else hours
+    ts = datetime.fromtimestamp(en_commit_time, timezone.utc) + timedelta(hours=hours)
+    return ts.strftime(READY_AFTER_FORMAT)
+
+
+def parse_ready_after(value) -> Optional[datetime]:
+    """'2026-11-22 14:05 UTC' (or an ISO date/time, read as UTC) -> aware datetime; None if blank or unreadable."""
+    text = str(value or "").strip().removesuffix("UTC").strip().replace("T", " ")
+    if not text:
+        return None
+    try:
+        dt = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def is_settled(row: Row, now: datetime = None) -> bool:
+    """
+    True when Step 2 may work on the row: its Ready After has passed (or is
+    blank / unreadable), or it doesn't wait at all — Priority Urgent (forced
+    by a person) or issue ISSUE (a reviewed retranslation request).
+    """
+    if str(row.get(config.KEY_PRIORITY, "")).strip().capitalize() == config.PRIORITY_URGENT:
+        return True
+    if str(row.get(C_ISSUE, "")).strip() == config.ISSUE_ISSUE:
+        return True
+    ready = parse_ready_after(row.get(config.KEY_READY_AFTER))
+    return ready is None or ready <= (now or datetime.now(timezone.utc))
+
+
 _POST_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
 
 
@@ -168,6 +216,7 @@ def new_row(finding: Row, scan_date: str, langs: List[str]) -> Row:
         config.KEY_ACTION       : config.ISSUE_ACTIONS.get(issue, ""),
         config.KEY_SOURCE       : config.SOURCE_SCANNER,
         C_NOTES                 : finding.get(C_NOTES, ""),
+        config.KEY_READY_AFTER  : finding.get(config.KEY_READY_AFTER, ""),
     })
     return row
 
@@ -232,11 +281,15 @@ def reconcile(queue: List[Row], findings: List[Row], scan_date: str,
             for col in (config.KEY_POST_URL, config.KEY_AUTHOR):
                 row[col] = finding.get(col, row[col]) or row[col]
             row[config.KEY_SCAN_DATE] = scan_date
+            # the English file may have been edited again: the wait restarts
+            row[config.KEY_READY_AFTER] = finding.get(config.KEY_READY_AFTER, "")
             tracked.setdefault(key, set()).update(remaining)
         elif issue in SCANNER_ISSUES:
             # held / invalid scanner rows still count as tracking their languages,
             # so the scan doesn't add duplicates behind a row someone put on hold
             tracked.setdefault(key, set()).update(split_langs(row[C_LANGS]))
+            if key in flagged:
+                row[config.KEY_READY_AFTER] = flagged[key].get(config.KEY_READY_AFTER, "")
         elif posts is not None and (is_open(row) or
                                     str(row.get(C_STATUS, "")).strip().lower() == config.STATUS_INVALID):
             validate_manual_row(row, posts, supported_langs or [])

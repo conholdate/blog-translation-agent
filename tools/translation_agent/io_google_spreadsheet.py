@@ -257,8 +257,9 @@ def _rows_in_step2_order(rows: List[dict], columns: List[str]) -> List[list]:
     return [[str(r.get(h, "")) for h in columns] for r in rows if not queue.is_blank(r)]
 
 
-# What Step 2 gets per row: the classic columns (by index, see translator.py) + Priority
-QUEUE_READ_COLUMNS = config.HEADERS_MISSING_TRANSLATIONS + [config.KEY_PRIORITY]
+# What Step 2 gets per row: the classic columns (by index, see translator.py)
+# + Priority (col 10) + Ready After (col 11, the settling time)
+QUEUE_READ_COLUMNS = config.HEADERS_MISSING_TRANSLATIONS + [config.KEY_PRIORITY, config.KEY_READY_AFTER]
 
 
 def read_domain_scan_rows(domain: str):
@@ -266,9 +267,10 @@ def read_domain_scan_rows(domain: str):
     Read the queue (domain tab) for Step 2.
 
     Columns are located by name and returned in QUEUE_READ_COLUMNS order
-    (HEADERS_MISSING_TRANSLATIONS + Priority), so the sheet's own column order
-    and extra columns don't matter. Priority is '' on tabs that don't have it
-    yet (Step 2 then falls back to the issue's default priority). Rows are kept
+    (HEADERS_MISSING_TRANSLATIONS + Priority + Ready After), so the sheet's own
+    column order and extra columns don't matter. Priority / Ready After are ''
+    on tabs that don't have them yet (Step 2 then falls back to the issue's
+    default priority / treats the row as ready). Rows are kept
     in sheet order; blank and placeholder rows are skipped.
 
     Returns (rows, scan_date), or (None, "") if the tab can't be read.

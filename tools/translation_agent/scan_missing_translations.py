@@ -20,9 +20,9 @@ from git_repo_utils import clone_or_pull_repos
 from io_google_spreadsheet import write_to_google_spreadsheet, sync_domain_queue, replace_cleanup_rows
 from translation_files_managers import delete_translation_files
 from translator import start_translation
-from scan_queue import post_date
+from scan_queue import post_date, ready_after
 from scan_helpers import (read_post_meta, git_history, outdated_langs,
-                          missing_note, extra_note, outdated_note)
+                          missing_note, extra_note, outdated_note, waiting_note)
 
 # Result keys used only inside this scanner
 KEY_OUTDATED_FILES      = "outdated_files"
@@ -235,7 +235,9 @@ def validate_existing_translation_files(domains): #path_to_valid_extensions
                             config.KEY_MISSING_COUNT : str(len(langs)),
                             config.KEY_MISSING_FILES : ", ".join(langs),
                             config.KEY_ACTION        : config.ISSUE_ACTIONS[issue],
-                            config.KEY_NOTES         : item[KEY_ROW_NOTES].get(issue, "")}
+                            config.KEY_NOTES         : item[KEY_ROW_NOTES].get(issue, ""),
+                            # settling time: Step 2 waits until then (new and edited posts alike)
+                            config.KEY_READY_AFTER   : ready_after(item[KEY_SOURCE_COMMIT_TIME])}
 
                 if item[config.KEY_MISSING_COUNT] > 0:
                     findings.append(finding(config.ISSUE_MISSING, item[config.KEY_MISSING_FILES]))
@@ -418,6 +420,12 @@ def validate_blog_dirs(base_path, valid_md_file_regex, valid_extensions, total_v
                     notes[config.ISSUE_OUTDATED] = outdated_note(commits, post_rel_dir, outdated,
                                                                  files_by_sha=files_by_sha,
                                                                  present_langs=present_langs)
+                # English edited too recently: say so on the rows Step 2 will hold back
+                wait = waiting_note(en_time, config.TRANSLATION_SETTLE_HOURS, int(time.time()))
+                if wait:
+                    for issue in (config.ISSUE_MISSING, config.ISSUE_OUTDATED):
+                        if issue in notes:
+                            notes[issue] = f"{notes[issue]}\n{wait}" if notes[issue] else wait
                 invalid_blog_dirs.append({
                     config.KEY_PRODUCT_NAME    : product_name,
                     config.KEY_DIR_BASE        : blog_dir,

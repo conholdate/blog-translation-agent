@@ -7,7 +7,7 @@ kept in their own module so they can be tested without running the scanner.
 - last_commits():        last git commit (time, author, subject, sha) of every file
 - last_commit_times():   the same, times only
 - outdated_langs():      translations whose index.md was committed after them
-- missing_note() / extra_note() / outdated_note(): the scan sheet's Notes text
+- missing_note() / extra_note() / outdated_note() / waiting_note(): the scan sheet's Notes text
 """
 
 import re
@@ -134,6 +134,18 @@ def missing_note(n_missing: int, n_supported: int) -> str:
 
 def extra_note() -> str:
     return "Unsupported language file(s) — not a language of this blog"
+
+
+def waiting_note(en_commit_time: int, settle_hours: int, now: int) -> str:
+    """
+    '⏳ Waiting until 2026-11-22 14:05 UTC (72 h after the last English edit)'
+    while the English index.md is younger than settle_hours; '' once it has
+    settled or when there is no commit time (no git history).
+    """
+    if not en_commit_time or en_commit_time + settle_hours * 3600 <= now:
+        return ""
+    until = datetime.fromtimestamp(en_commit_time + settle_hours * 3600, timezone.utc)
+    return f"⏳ Waiting until {until:%Y-%m-%d %H:%M} UTC ({settle_hours} h after the last English edit)"
 
 
 def outdated_note(commits: Dict[str, Commit], post_rel_dir: str, langs: List[str],
