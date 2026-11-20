@@ -102,6 +102,17 @@ The agent only writes language variants (`index.{lang}.md`) — it never modifie
 
 **Automated alerting:** `.github/workflows/alert-on-failure.yml` watches all scan/translate workflows and fires when one fails. Set the repo secret `ALERT_WEBHOOK_URL` (Slack/Teams/incoming webhook) to receive alerts; without it, GitHub still emails the run actor. Treat a failed scheduled run as the trigger to start here.
 
+**"Skipped" runs in the Actions list are normal:**
+- *Alert on workflow failure* runs every time the scan or a translate workflow finishes. It only
+  sends an alert when that run **failed**, so after a successful run it shows as `skipped`.
+- *Auto Translate - <blog>* runs are created every time the scan finishes. After a **manual** scan
+  (`workflow_dispatch`) the job is skipped by its `workflow_run.event == 'schedule'` guard. So a
+  manual scan never starts translations, and re-scanning during the day is safe (checked
+  20 Nov 2026: a manual scan created 5 skipped translate runs and 6 skipped alert runs).
+- Run a manual scan only when no translation run is in progress. The scan rewrites each domain tab
+  in full and could overwrite what a running translation is writing to it (closing languages,
+  Comments). Check with `gh run list` or the Actions tab.
+
 1. Owner / first responder: **Shoaib Khan**.
 2. Sub-area owners per `.github/CODEOWNERS` (`tools/translation_agent/` co-maintainers).
 3. For a suspected credential exposure: rotate immediately (§3), then review Actions logs for the affected window.

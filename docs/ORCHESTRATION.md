@@ -264,6 +264,17 @@ translator.py  →  start_translation()
   `Waiting: n row(s)` (each row in verbose). Why: the owner's request. Errors found in a fresh
   English article (often fixed in the first days) are corrected before they are copied into
   every language, which saves fix-ups and retranslation cost.
+  **In practice the wait is 72–84 h.** Translation runs start only after the two daily scheduled
+  scans, so a post is picked up by the first run after its 72 h are up.
+  **Rollout (20 Nov 2026):**
+  - Commit `fc15060` was pushed at about 09:20 UTC. A manual scan followed at 09:25–09:27 UTC
+    (run 44710572846, success on all 6 domains). It added the Ready After column to every domain
+    tab and filled it on the MISSING / OUTDATED rows.
+  - Open rows per tab: aspose.com 434 (3 new), aspose.cloud 69, groupdocs.cloud 27,
+    conholdate.com 214, conholdate.cloud 0, groupdocs.com 237 (2 closed).
+  - The five chained translate runs were **skipped**, because the scan was manual (see Schedules).
+    The first translation runs that apply the wait are the ones after the next scheduled scan.
+  - Before that scan the column didn't exist, so every row counted as ready.
 - **Language budget** (since 18 Nov 2026): `--limit` is "posts' worth" — the run translates up to
   `limit × the blog's language count` languages (`language_budget()`; e.g. 2 × 21 = 42 on blog.aspose.com,
   3 × 17 = 51 on blog.conholdate.com), taken from the ordered queue (`apply_language_budget()`). Why:
