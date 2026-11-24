@@ -4,6 +4,7 @@ import gspread
 import sys
 import config
 import scan_queue as queue
+from scan_helpers import issue_note
 from run_log import detail
 from datetime import datetime
 from typing import Dict, List, Union # For type hints and better readability
@@ -467,7 +468,7 @@ def add_to_queue(domain: str, product: str, slug: str, langs: List[str], reason:
             config.KEY_POST_URL: post_url, config.KEY_AUTHOR: author, config.KEY_ISSUE: issue,
             config.KEY_MISSING_COUNT: str(len(new)), config.KEY_MISSING_FILES: queue.join_langs(new),
             config.KEY_ACTION: config.ISSUE_ACTIONS.get(issue, ""), config.KEY_SOURCE: source,
-            config.KEY_NOTES: reason,
+            config.KEY_NOTES: issue_note(reason, source),   # headline = reason, then 'Requested by …'
         })
         old_header = [str(h).strip() for h in values[0]] if values else []
         if header != old_header:            # new tab, or columns missing: write the header first

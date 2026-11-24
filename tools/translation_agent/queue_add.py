@@ -35,7 +35,8 @@ def main(argv=None) -> int:
     p.add_argument("--domain", required=True, choices=sorted(config.domains_data))
     p.add_argument("--post", required=True, type=parse_post, help="<product>/<post folder>")
     p.add_argument("--langs", default="", help="comma-separated language codes (default: all)")
-    p.add_argument("--reason", required=True, help="what is wrong (goes to Notes)")
+    p.add_argument("--reason", required=True,
+                   help="what is wrong — a short headline: Notes line 1 (line 2: 'Requested by <source>')")
     p.add_argument("--source", default=config.SOURCE_MANUAL, help="who asks: Manual (default) or an agent's name")
     p.add_argument("--priority", choices=list(config.PRIORITY_RANK), default=None,
                    help=f"default: {config.DEFAULT_PRIORITY[config.ISSUE_ISSUE]}")

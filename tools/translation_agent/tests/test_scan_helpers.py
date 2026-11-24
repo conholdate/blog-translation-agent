@@ -163,7 +163,8 @@ class TestOutdatedLangs:
 # last_commits() and the Notes texts
 # ---------------------------------------------------------------------------
 
-from scan_helpers import Commit, last_commits, missing_note, extra_note, outdated_note
+from scan_helpers import (Commit, last_commits, missing_note, extra_note, outdated_note,
+                          issue_note, display_author)
 
 
 class TestLastCommits:
@@ -182,7 +183,7 @@ class TestLastCommits:
 
 class TestNotes:
     def test_missing_note(self):
-        assert missing_note(21, 21) == "New post"
+        assert missing_note(21, 21) == "New Post"
         assert missing_note(3, 21) == "3 of 21 languages missing"
 
     def test_extra_note(self):
@@ -195,8 +196,17 @@ class TestNotes:
             f"{POST}/index.fr.md": Commit(1746748800, "bot", "t"),
         }
         assert outdated_note(commits, POST, ["de", "fr"]) == (
-            'English updated 2025-11-16 by optimizer-agent ("Optimized Blog Posts"); '
-            "translations from 2025-05-09")
+            "Updated by Optimizer Agent on 2025-11-16\n"
+            '"Optimized Blog Posts"; translations from 2025-05-09')
+
+    def test_outdated_note_headline_is_first_line(self):
+        commits = {f"{POST}/index.md": Commit(1763251200, "Muzammil Khan", "Edit")}
+        assert outdated_note(commits, POST, []).split("\n") == [
+            "Updated by Muzammil Khan on 2025-11-16", '"Edit"']
+
+    def test_outdated_note_without_subject_or_translations_is_one_line(self):
+        commits = {f"{POST}/index.md": Commit(1763251200, "Jane", "")}
+        assert outdated_note(commits, POST, []) == "Updated by Jane on 2025-11-16"
 
     def test_outdated_note_date_range(self):
         commits = {
@@ -209,10 +219,32 @@ class TestNotes:
     def test_outdated_note_long_subject_is_shortened(self):
         commits = {f"{POST}/index.md": Commit(1763251200, "Jane", "x" * 200)}
         note = outdated_note(commits, POST, [])
-        assert '("' + "x" * 79 + '…")' in note
+        assert note.split("\n")[1] == '"' + "x" * 79 + '…"'
 
     def test_outdated_note_without_english_commit(self):
         assert outdated_note({}, POST, ["de"]) == ""
+
+    def test_issue_note(self):
+        assert issue_note("Tables left in English", "quality-agent") == \
+            "Tables left in English\nRequested by quality-agent"
+        assert issue_note("  multi\nline  reason ", "") == "multi line reason"
+
+
+class TestDisplayAuthor:
+    def test_known_logins_are_mapped(self):
+        assert display_author("shoaibkhan-aspose") == "Shoaib Khan"
+        assert display_author("MustafaButt-Dev") == "Mustafa Butt"
+
+    def test_login_like_names_are_split_and_capitalised(self):
+        assert display_author("optimizer-agent") == "Optimizer Agent"
+        assert display_author("roy.wang") == "Roy Wang"
+        assert display_author("some_bot") == "Some Bot"
+
+    def test_readable_names_are_kept(self):
+        assert display_author("Muzammil Khan") == "Muzammil Khan"
+        assert display_author("Blogs Translation Agent") == "Blogs Translation Agent"
+        assert display_author("Mustafa") == "Mustafa"
+        assert display_author("") == ""
 
 
 class TestSameCommitChangedTranslations:

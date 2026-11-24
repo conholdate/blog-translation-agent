@@ -28,11 +28,29 @@ text such as `author: …` is never picked up. A post without `author` is report
 
 | Issue | Detected when | Action | Target Translations | Notes (example) |
 |---|---|---|---|---|
-| `MISSING` | a supported language has no `index.{lang}.md` | `Translate` | missing language codes | `New post` · `3 of 21 languages missing` |
+| `MISSING` | a supported language has no `index.{lang}.md` | `Translate` | missing language codes | `New Post` · `3 of 21 languages missing` |
 | `EXTRA` | a `.md` file isn't `index.md` / `index.{supported lang}.md` | `Delete` | the extra fragments (e.g. `xx`, `tmp`) | `Unsupported language file(s) — not a language of this blog` |
-| `OUTDATED` | the post's `index.md` was **committed after** its `index.{lang}.md` | `Retranslate` | outdated language codes | `English updated 2026-11-16 by optimizer-agent ("Optimized Blog Posts"); translations from 2025-05-09` |
+| `OUTDATED` | the post's `index.md` was **committed after** its `index.{lang}.md` | `Retranslate` | outdated language codes | `Updated by Optimizer Agent on 2026-11-16` ⏎ `"Optimized Blog Posts"; translations from 2025-05-09` |
 
 A post with several issues produces one row per issue.
+
+**Notes layout (since 24 Nov 2026).** Line 1 is a short **headline** with the main reason, so a web
+page (the dashboard) can show just that line. Line 2 has the details, `;`-delimited. The
+`⏳ Waiting until …` line comes last. On an invalid manual row, the `⚠️ Invalid: …` line goes on top.
+
+| Row | Line 1 (headline) | Line 2 (details) |
+|---|---|---|
+| MISSING | `New Post` · `N of M languages missing` | none |
+| OUTDATED | `Updated by <name> on <date>` | `"<commit subject>"; translations from <date>[ to <date>][; same commit changed N of M translations]` |
+| ISSUE | the request's `--reason` | `Requested by <source>` |
+| EXTRA | `Unsupported language file(s) — not a language of this blog` | none |
+
+`<name>` comes from `scan_helpers.display_author()`. Known git logins are mapped in `AUTHOR_NAMES`
+(`shoaibkhan-aspose` → Shoaib Khan, `mustafabutt-dev` → Mustafa Butt; add new committers there).
+Other login-like names (no spaces, with `-`, `_` or `.`) are split into capitalised words:
+`optimizer-agent` → Optimizer Agent, `roy.wang` → Roy Wang. Readable names such as `Muzammil Khan` are
+kept. Every scan rewrites the scanner's Notes, so open rows switched at the first scan after the
+change. ISSUE rows added earlier and `history` rows of closed posts keep the old one-line text.
 
 ### OUTDATED — how it is decided
 
@@ -145,7 +163,8 @@ detect (bad tables, wrong terms, a quality finding) are ISSUE rows. Add them wit
 --reason "…" [--source <agent>] [--priority Urgent]` (agents in Python: `io_google_spreadsheet.add_to_queue()`),
 or type a row into the tab by hand (Issue `ISSUE`; Domain, Product, Blog Post Directory, languages).
 `add_to_queue()` skips languages an open ISSUE / OUTDATED row of the post already retranslates and
-appends one row at the bottom (Priority Normal unless given, Source as given, Missing Since today).
+appends one row at the bottom (Priority Normal unless given, Source as given, Missing Since today,
+Notes = the reason as the headline + `Requested by <source>` on line 2, `scan_helpers.issue_note()`).
 Every scan checks open and `invalid` ISSUE rows against the repo (`validate_manual_row()`): the post
 folder must exist (non-draft, with `index.md`) and every language must be one of the blog's; blank
 languages mean all of them. A failing row gets Status `invalid` and a `⚠️ Invalid: …` line on top of

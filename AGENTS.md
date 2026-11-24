@@ -8,7 +8,7 @@ explicitly approves it in the current session (see "User-Approved Changes").
 This file is a living document: agents keep it updated with the standing instructions agreed in
 discussions with the user (see "Standing Instructions").
 
-Last updated: 2026-11-20
+Last updated: 2026-11-24
 Authority: Shoaib Khan
 
 ---
@@ -95,7 +95,9 @@ Blog Translation Agent
        OUTDATED newest post first by folder date) with Priority MISSING High / OUTDATED Low, Source
        Scanner, Missing Since and Ready After (last English commit + 72 h). People's edits (row splits, Priority incl. Urgent, Status such
        as `hold`, Comments, own columns) are kept. EXTRA rows go to the shared `cleanup` tab.
-       Each row has a Notes reason (e.g. which English commit made it OUTDATED)
+       Each row has a Notes reason: a headline on line 1 for the dashboard (`New Post`,
+       `N of M languages missing`, `Updated by <name> on <date>`, an ISSUE row's reason), with
+       `;`-delimited details on line 2 and the `⏳ Waiting until …` line last
 
   Step 2 — Translate
     1. Read the queue (domain tab) and the domain's `cleanup` rows; no fallback to the old
@@ -207,3 +209,4 @@ with the date, and update `Last updated` above.
 | 2026-11-19 | Queue order within a priority: MISSING and ISSUE first in, first out (sheet order); OUTDATED newest post first (folder date — a 2026 post before a 2022 one). |
 | 2026-11-19 | Keep every operational script (resets, re-sorts, one-off sheet fixes) in the repo with tests and docs, never only in a temp/scratch folder — nothing may be lost. Scripts that change sheets are dry run by default, back up what they change, and record their results in the docs. |
 | 2026-11-20 | Settling time: translate a post only when **72 h (3 days) have passed since the last commit to its English `index.md`**. The same rule applies to new and updated/optimised posts, so English errors are fixed before they reach translations. Priority `Urgent` skips the wait; ISSUE rows don't wait; a post without git history counts as ready. |
+| 2026-11-24 | Queue Notes start with a short **headline on line 1** giving the main reason, so the dashboard can show it: `New Post`, `Updated by <name> on <date>` (git logins shown as people's names), or an ISSUE row's reason. Details follow on line 2, still `;`-delimited. |

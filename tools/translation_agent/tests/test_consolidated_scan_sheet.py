@@ -291,7 +291,7 @@ class TestAddToQueue:
         assert row["Issue"] == "ISSUE" and row["Action"] == "Retranslate"
         assert row["Target Translations"] == "it, ja" and row["Count"] == "2"
         assert row["Priority"] == "Normal" and row["Source"] == "quality-agent"
-        assert row["Notes"] == "tables in English" and row["Missing Since"]
+        assert row["Notes"] == "tables in English\nRequested by quality-agent" and row["Missing Since"]
         assert ws.calls[-1] == ("append_rows", None, "RAW")
 
     def test_languages_already_being_retranslated_are_skipped(self, ws):

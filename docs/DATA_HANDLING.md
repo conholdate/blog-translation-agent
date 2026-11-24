@@ -12,7 +12,7 @@ Companion to [`ARCHITECTURE.md`](./ARCHITECTURE.md) and [`RUNBOOK.md`](./RUNBOOK
 | Git commit metadata of the blog repos (commit date, author name, subject) | Public blog repos' history | Public (already visible on GitHub) | Scan sheet `Notes` column for `OUTDATED` rows; the English file's last commit time (+ 72 h) as the queue's `Ready After` (settling time, since 20 Nov 2026) |
 | Run metrics (run_id, durations, counts, token usage) | Pipeline runtime | Operational, non-PII | Metrics REST endpoint (`METRICS_API_URL`) |
 
-**No personal data (PII) beyond public names is processed.** The agent operates on public blog content, its own operational metadata, and author names that are already public (post `author` front matter; git commit author names in OUTDATED Notes).
+**No personal data (PII) beyond public names is processed.** The agent operates on public blog content, its own operational metadata, and author names that are already public (post `author` front matter; git commit author names in OUTDATED Notes, shown in the headline `Updated by <name> on <date>`. Known logins are mapped to the person's name in `scan_helpers.AUTHOR_NAMES`).
 
 ## Secrets — where they live
 

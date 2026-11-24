@@ -7,6 +7,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+- **Notes headline** (24 Nov 2026): a queue row's Notes now start with a short **headline on line 1** giving the main reason, so a web page (the dashboard) can show just that line. Details (still `;`-delimited) are on line 2, and the `⏳ Waiting until …` line stays last. Headlines:
+  - MISSING: `New Post` (was `New post`) / `N of M languages missing`
+  - OUTDATED: `Updated by <name> on <date>`, then `"<subject>"; translations from <date>[; same commit changed N of M translations]`. It used to be one line: `English updated <date> by <author> ("<subject>"); …`
+  - ISSUE (`queue_add.py` / `add_to_queue()`): the `--reason` text, then `Requested by <source>`. It used to be the reason only
+  - EXTRA and the `⚠️ Invalid: …` line (kept on top of an invalid row) are unchanged
+  - Names: `scan_helpers.display_author()` maps known git logins (`AUTHOR_NAMES`: `shoaibkhan-aspose` → Shoaib Khan, `mustafabutt-dev` → Mustafa Butt). Other login-like names (no spaces, with `-`, `_` or `.`) become capitalised words, e.g. `optimizer-agent` → Optimizer Agent, `roy.wang` → Roy Wang. Readable names such as `Muzammil Khan` are kept
+  - No migration is needed: every scan rewrites the scanner's Notes, so open rows switch at the next scheduled scan. ISSUE rows that already exist and `history` rows of closed posts keep the old text. The dashboard's waiting-line filter already checks every line, so it needs no change (dashboard not changed, as the user asked)
+
 ### Added
 - `docs/GITLAB_MIGRATION.md` (20 Nov 2026): analysis of moving the scan/translate pipelines from GitHub Actions to GitLab CI — mapping, small code changes (`run_log.py` CI detection), risks (both platforms live, runners, GitLab's 1 h default job timeout), cut-over order and the owner's open questions. Not started. RUNBOOK "Where it runs" now lists both code remotes (GitLab mirror is pushed by hand; it lagged 25 commits until 19 Nov) and the GitLab CI scope
 - **3-day settling time** (20 Nov 2026): a post is translated only once **72 h have passed since the last commit to its English `index.md`**. The rule is the same for new (MISSING) and updated or optimised (OUTDATED) posts, so errors in the English article can be fixed before they are copied into every language. Details:

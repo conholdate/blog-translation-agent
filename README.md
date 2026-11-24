@@ -10,7 +10,7 @@ The agent runs a four-step pipeline:
 
 | Step | What it does |
 |------|-------------|
-| **1. Scan** | Walks all blog repositories daily and reports to Google Sheets every post with a missing translation (`MISSING`), an unsupported extra file (`EXTRA`), or a translation older than its English `index.md` (`OUTDATED` — the English was committed after it), with a `Notes` column saying why |
+| **1. Scan** | Walks all blog repositories daily and reports to Google Sheets every post with a missing translation (`MISSING`), an unsupported extra file (`EXTRA`), or a translation older than its English `index.md` (`OUTDATED` — the English was committed after it), with a `Notes` column saying why (line 1 is a short headline for the dashboard, e.g. `New Post` or `Updated by Optimizer Agent on 2026-11-16`) |
 | **2. Translate** | Reads the scan results, fills in missing translations and retranslates outdated ones using an LLM — preserving formatting, code blocks, and front matter. New posts always go first. A post is translated only 3 days (72 h) after its last English edit, so errors can be fixed in English first (Urgent rows skip the wait) |
 | **3. Quality Check** | Scores all existing translations for accuracy using a heuristic pass followed by AI analysis |
 | **4. Retranslate** | Re-translates files the AI validator flags `RETRANSLATE` — **not scheduled in any workflow yet** (see [ORCHESTRATION.md](docs/ORCHESTRATION.md#control-flow--step-4-retranslator)) |

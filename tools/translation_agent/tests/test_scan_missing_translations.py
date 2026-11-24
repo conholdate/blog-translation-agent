@@ -149,7 +149,7 @@ class TestNotes:
         _post(tmp_path, "2026-01-01-part", {"index.md": EN.format(slug="part"), "index.de.md": "x",
                                             "index.xx.md": "junk"})
         res = _scan(scanner, tmp_path)
-        assert res["2026-01-01-new"][scanner.KEY_ROW_NOTES] == {config.ISSUE_MISSING: "New post"}
+        assert res["2026-01-01-new"][scanner.KEY_ROW_NOTES] == {config.ISSUE_MISSING: "New Post"}
         notes = res["2026-01-01-part"][scanner.KEY_ROW_NOTES]
         assert notes[config.ISSUE_MISSING] == "1 of 2 languages missing"
         assert notes[config.ISSUE_EXTRA].startswith("Unsupported language file")
@@ -169,8 +169,8 @@ class TestNotes:
                                       date="2026-03-01T00:00:00+00:00")
 
         note = _scan(scanner, repo)["2026-01-01-a"][scanner.KEY_ROW_NOTES][config.ISSUE_OUTDATED]
-        assert note == ('English updated 2026-03-01 by optimizer-agent ("Optimized Blog Posts"); '
-                        "translations from 2026-01-02")
+        assert note == ("Updated by Optimizer Agent on 2026-03-01\n"
+                        '"Optimized Blog Posts"; translations from 2026-01-02')
 
     def test_fresh_english_commit_adds_waiting_line(self, scanner, tmp_path):
         """Settling time: a post committed less than 72 h ago says when it will be translated."""
@@ -182,7 +182,7 @@ class TestNotes:
         _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "publish")      # now
         note = _scan(scanner, repo)["2026-01-01-new"][scanner.KEY_ROW_NOTES][config.ISSUE_MISSING]
         first, second = note.split("\n")
-        assert first == "New post"
+        assert first == "New Post"
         assert second.startswith("⏳ Waiting until ") and second.endswith(
             f"UTC ({config.TRANSLATION_SETTLE_HOURS} h after the last English edit)")
 
@@ -193,7 +193,7 @@ class TestNotes:
             _git(repo, *args)
         _post(repo, "2026-01-01-old", {"index.md": EN.format(slug="old")})
         _git(repo, "add", "-A"); _git(repo, "commit", "-q", "-m", "publish", date="2026-01-01T00:00:00+00:00")
-        assert _scan(scanner, repo)["2026-01-01-old"][scanner.KEY_ROW_NOTES] == {config.ISSUE_MISSING: "New post"}
+        assert _scan(scanner, repo)["2026-01-01-old"][scanner.KEY_ROW_NOTES] == {config.ISSUE_MISSING: "New Post"}
 
 
 class TestFixAcrossSomeLanguages:
@@ -253,7 +253,7 @@ class TestQueueWrite:
         calls, stats = run()
         assert [(f[config.KEY_DIR_BASE], f[config.KEY_ISSUE], f[config.KEY_MISSING_FILES])
                 for f in calls["queue"]] == [("2024-01-01-a", "MISSING", "fr"), ("2024-01-02-b", "MISSING", "de, fr")]
-        assert calls["queue"][1][config.KEY_NOTES] == "New post"
+        assert calls["queue"][1][config.KEY_NOTES] == "New Post"
         assert calls["queue"][0][config.KEY_ACTION] == config.ACTION_TRANSLATE
         assert [(r[config.KEY_ISSUE], r[config.KEY_MISSING_FILES]) for r in calls["cleanup"]] == [("EXTRA", "xx")]
         assert stats.items_discovered == 3 and stats.items_succeeded == 3

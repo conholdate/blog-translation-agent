@@ -296,10 +296,12 @@ Scan results are automatically saved to Google Sheets with:
 - Target Translations (missing / outdated language codes, or junk fragments for `EXTRA`)
 - Action (`Translate`, `Delete` or `Retranslate`)
 - Status — blank / `partial` = open; `hold` (or any other value) = skipped; `invalid` = a manual row the scan can't match
-- Notes — why the row was flagged, e.g. `New post`, `3 of 21 languages missing`,
-  `English updated 2026-11-16 by optimizer-agent ("Optimized Blog Posts"); translations from 2025-05-09`;
-  when the English commit also changed some translations (a fix across languages) it adds
-  `; same commit changed 18 of 22 translations` — the untouched ones are still retranslated
+- Notes — why the row was flagged. Line 1 is a short headline for the dashboard: `New Post`,
+  `3 of 21 languages missing`, `Updated by Optimizer Agent on 2026-11-16`, or an ISSUE row's reason.
+  Line 2 has the details, e.g. `"Optimized Blog Posts"; translations from 2025-05-09` or
+  `Requested by quality-agent`. When the English commit also changed some translations (a fix across
+  languages), line 2 adds `; same commit changed 18 of 22 translations`, and the untouched ones are
+  still retranslated. Git logins are shown as names (`scan_helpers.display_author()`, `AUTHOR_NAMES`)
 - Direct links to details
 
 The domain tab (the queue) also has Scan Date, Missing Since (first flagged, never changed), Days

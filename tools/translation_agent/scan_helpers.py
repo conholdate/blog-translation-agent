@@ -7,7 +7,9 @@ kept in their own module so they can be tested without running the scanner.
 - last_commits():        last git commit (time, author, subject, sha) of every file
 - last_commit_times():   the same, times only
 - outdated_langs():      translations whose index.md was committed after them
-- missing_note() / extra_note() / outdated_note() / waiting_note(): the scan sheet's Notes text
+- missing_note() / extra_note() / outdated_note() / waiting_note() / issue_note():
+                         the queue's Notes text (headline on line 1, details below)
+- display_author():      a git author name as shown in a Notes headline
 """
 
 import re
@@ -125,11 +127,44 @@ def _date(ts: int) -> str:
     return datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d")
 
 
+# Notes layout (since 24 Nov 2026): line 1 is a short headline with the main
+# reason, so a web page (the dashboard) can show just that line; details
+# (';'-delimited) follow on line 2; the '⏳ Waiting until …' line comes last.
+
+# Git logins shown as people's names in headlines; other names go through
+# display_author()'s generic clean-up ('optimizer-agent' → 'Optimizer Agent').
+AUTHOR_NAMES = {
+    "shoaibkhan-aspose": "Shoaib Khan",
+    "mustafabutt-dev":   "Mustafa Butt",
+}
+
+
+def display_author(name: str) -> str:
+    """
+    A git author name as it reads on a web page: known logins are mapped
+    (AUTHOR_NAMES), a login-like name (no spaces, with '-', '_' or '.') is
+    split into capitalised words, anything else is kept as written.
+    """
+    name = (name or "").strip()
+    if name.lower() in AUTHOR_NAMES:
+        return AUTHOR_NAMES[name.lower()]
+    if name and " " not in name and re.search(r"[-_.]", name):
+        return " ".join(w.capitalize() for w in re.split(r"[-_.]+", name) if w)
+    return name
+
+
 def missing_note(n_missing: int, n_supported: int) -> str:
-    """'New post' when no translation exists yet, else 'N of M languages missing'."""
+    """'New Post' when no translation exists yet, else 'N of M languages missing'."""
     if n_missing >= n_supported:
-        return "New post"
+        return "New Post"
     return f"{n_missing} of {n_supported} languages missing"
+
+
+def issue_note(reason: str, source: str) -> str:
+    """ISSUE row: the request's reason as the headline, 'Requested by <source>' below."""
+    reason = " ".join(str(reason or "").split())
+    source = str(source or "").strip()
+    return "\n".join(p for p in (reason, f"Requested by {source}" if source else "") if p)
 
 
 def extra_note() -> str:
@@ -152,9 +187,14 @@ def outdated_note(commits: Dict[str, Commit], post_rel_dir: str, langs: List[str
                   subject_max: int = 80, files_by_sha: Dict[str, Set[str]] = None,
                   present_langs: List[str] = None) -> str:
     """
-    E.g. 'English updated 2026-11-16 by optimizer-agent ("Optimized Blog Posts");
-    translations from 2025-05-09' — the English file's last commit, and the
-    date (or date range) of the outdated translations' last commits.
+    Two lines — the headline, then the details:
+
+        Updated by Optimizer Agent on 2026-11-16
+        "Optimized Blog Posts"; translations from 2025-05-09
+
+    i.e. who last committed the English file and when (display_author()), that
+    commit's subject, and the date (or date range) of the outdated
+    translations' last commits.
 
     With files_by_sha and present_langs, a commit that also changed some of the
     post's translations (a fix across languages, e.g. Health and Recovery) adds
@@ -164,15 +204,16 @@ def outdated_note(commits: Dict[str, Commit], post_rel_dir: str, langs: List[str
     en = commits.get(f"{post_rel_dir}/index.md")
     if not en:
         return ""
+    headline = f"Updated by {display_author(en.author) or 'unknown'} on {_date(en.time)}"
     subject = en.subject if len(en.subject) <= subject_max else en.subject[:subject_max - 1] + "…"
-    note = f'English updated {_date(en.time)} by {en.author} ("{subject}")'
+    details = [f'"{subject}"'] if subject else []
     times = sorted(c.time for l in langs if (c := commits.get(f"{post_rel_dir}/index.{l}.md")))
     if times:
         first, last = _date(times[0]), _date(times[-1])
-        note += f"; translations from {first}" if first == last else f"; translations from {first} to {last}"
+        details.append(f"translations from {first}" if first == last else f"translations from {first} to {last}")
     if files_by_sha and present_langs and en.sha:
         changed = files_by_sha.get(en.sha, set())
         n = sum(1 for l in present_langs if f"{post_rel_dir}/index.{l}.md" in changed)
         if n:
-            note += f"; same commit changed {n} of {len(present_langs)} translations"
-    return note
+            details.append(f"same commit changed {n} of {len(present_langs)} translations")
+    return headline + ("\n" + "; ".join(details) if details else "")
