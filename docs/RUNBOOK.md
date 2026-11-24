@@ -10,7 +10,9 @@ Owner / on-call: **Shoaib Khan** (see [`.github/CODEOWNERS`](../.github/CODEOWNE
 
 | Surface | Detail |
 |---|---|
-| CI/CD | GitHub Actions — 8 workflows in `.github/workflows/` |
+| CI/CD | GitHub Actions — 12 workflow files in `.github/workflows/` (scan, 7 translate, CI, release, alerts, dev→main PR). All scheduled scan/translate runs happen here only |
+| Code remotes | `origin` = GitHub `conholdate/blog-translation-agent` (runs the pipelines); `gitlab` = `gitlab.recruitize.ai/…/blog-post-translator` (mirror). The GitLab mirror is **not** synced automatically — push to it explicitly (`git push gitlab main`); it lagged 25 commits until 19 Nov 2026. Check with `git ls-remote gitlab refs/heads/main` vs `git rev-parse main` |
+| GitLab CI | `.gitlab-ci.yml` runs only the quality gate (tests, secret scan, lint) — never scan/translate, so the live blog repos and the queue aren't worked from two platforms at once. Moving the pipelines to GitLab: see [GITLAB_MIGRATION.md](./GITLAB_MIGRATION.md) (analysed, not started) |
 | Schedule | Scan at 00:00 and 12:00 UTC; each scheduled scan starts the five maintained blogs' translation workflows when it finishes (`workflow_run`). Manual via `workflow_dispatch` |
 | Runtime | Python 3.13, dependencies pinned in `requirements.lock` |
 | State | Google Sheets (domain tabs = persistent queue, `cleanup`, `history` = completed rows) |

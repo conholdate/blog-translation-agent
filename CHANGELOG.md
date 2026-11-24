@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Added
+- `docs/GITLAB_MIGRATION.md` (20 Nov 2026): analysis of moving the scan/translate pipelines from GitHub Actions to GitLab CI — mapping, small code changes (`run_log.py` CI detection), risks (both platforms live, runners, GitLab's 1 h default job timeout), cut-over order and the owner's open questions. Not started. RUNBOOK "Where it runs" now lists both code remotes (GitLab mirror is pushed by hand; it lagged 25 commits until 19 Nov) and the GitLab CI scope
 - **3-day settling time** (20 Nov 2026): a post is translated only once **72 h have passed since the last commit to its English `index.md`**. The rule is the same for new (MISSING) and updated or optimised (OUTDATED) posts, so errors in the English article can be fixed before they are copied into every language. Details:
   - The scanner writes a new queue column **Ready After** (last English commit + `config.TRANSLATION_SETTLE_HOURS` = 72, in UTC, `scan_queue.ready_after()`). Every scan refreshes it, so a new English edit restarts the wait.
   - While a post waits, Notes end with `⏳ Waiting until <time> UTC (72 h after the last English edit)` (`scan_helpers.waiting_note()`).

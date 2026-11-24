@@ -141,6 +141,7 @@ blog-translation-agent/
 │   ├── ORCHESTRATION.md                    # State model + control flow
 │   ├── RUNBOOK.md                          # Operations + incident response
 │   ├── DATA_HANDLING.md                    # Data flow, secrets, retention
+│   ├── GITLAB_MIGRATION.md                 # Moving the pipelines to GitLab (analysis, not started)
 │   └── PIPELINE_MAP.html                   # Visual pipeline map
 │
 ├── .github/

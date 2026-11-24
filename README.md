@@ -64,7 +64,9 @@ blog-translation-agent/
 │   ├── ARCHITECTURE.md             # System overview and component map
 │   ├── ORCHESTRATION.md            # Pipeline steps, state models, extension points
 │   ├── RUNBOOK.md                  # Operations: runs, credential rotation, recovery, escalation
-│   └── DATA_HANDLING.md            # Data flow, secrets storage, retention
+│   ├── DATA_HANDLING.md            # Data flow, secrets storage, retention
+│   ├── GITLAB_MIGRATION.md         # Moving the pipelines to GitLab (analysis, not started)
+│   └── PIPELINE_MAP.html           # Visual pipeline map
 ├── .github/
 │   ├── workflows/                  # GitHub Actions (CI gate, operational, release, alerts)
 │   ├── dependabot.yml              # Weekly pip + Actions dependency updates
@@ -91,6 +93,7 @@ blog-translation-agent/
 | [docs/ORCHESTRATION.md](docs/ORCHESTRATION.md) | Pipeline steps, state models, extension points |
 | [docs/RUNBOOK.md](docs/RUNBOOK.md) | Operations: manual runs, credential rotation, recovery, escalation |
 | [docs/DATA_HANDLING.md](docs/DATA_HANDLING.md) | What data is processed, where secrets live, retention |
+| [docs/GITLAB_MIGRATION.md](docs/GITLAB_MIGRATION.md) | Moving the scan/translate pipelines to GitLab — analysis, risks, open questions (not started) |
 | [AGENTS.md](AGENTS.md) | Agent governance policy and allowed/forbidden paths |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Local setup, testing, and release process |
 
