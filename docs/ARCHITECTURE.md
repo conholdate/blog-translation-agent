@@ -173,7 +173,7 @@ blog-translation-agent/
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `scan-missing-translations.yml` | 00:00 and 12:00 UTC + manual | Runs scanner for all 6 domains (blog repo checked out with full history for the OUTDATED check); `fail-fast: false` |
+| `scan-missing-translations.yml` | 00:00 and 12:00 UTC (GitHub starts it 4–11 h late) + manual | Runs scanner for all 6 domains (blog repo checked out with full history for the OUTDATED check); `fail-fast: false` |
 | `translate-blog-*.yml` (per domain) | When a scheduled scan finishes (`workflow_run`; not groupdocs.com) + manual | Works the queue by priority within a language budget (limit × the blog's languages, default 2 posts' worth) and a 5 h time limit, syncs with `git merge --ff-only --autostash`, commits one commit per post; one run per blog at a time (`concurrency`) |
 | `translate-blogs.yml` | Manual dispatch | Translates a chosen domain, product, author, and limit |
 

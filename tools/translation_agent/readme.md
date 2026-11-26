@@ -264,7 +264,7 @@ For the full control flow and state model see [docs/ORCHESTRATION.md](../../docs
 
 ### Daily Scan Workflow
 
-Runs automatically at 00:00 and 12:00 UTC.
+Runs automatically at 00:00 and 12:00 UTC. GitHub usually starts it 4–11 h late (observed in Nov 2026), so check `gh run list` rather than the clock.
 
 **File:** `.github/workflows/scan-missing-translations.yml`
 

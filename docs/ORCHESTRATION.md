@@ -51,6 +51,11 @@ Other login-like names (no spaces, with `-`, `_` or `.`) are split into capitali
 `optimizer-agent` → Optimizer Agent, `roy.wang` → Roy Wang. Readable names such as `Muzammil Khan` are
 kept. Every scan rewrites the scanner's Notes, so open rows switched at the first scan after the
 change. ISSUE rows added earlier and `history` rows of closed posts keep the old one-line text.
+**Rollout (24 Nov 2026):** commit `48b2262` was pushed at about 08:21 UTC. Four translation runs
+were still in progress, so the manual scan waited until they had all finished. It ran at
+11:14–11:17 UTC (run 45382374825, `workflow_dispatch`, success on all 6 domains) and rewrote the open
+rows' Notes. Being manual, it started no translation runs. Scheduled scans have kept the format
+since (24 Nov 22:01, 25 Nov 06:24 and 21:16, 26 Nov 06:16 UTC, all successful).
 
 ### OUTDATED — how it is decided
 
@@ -283,8 +288,10 @@ translator.py  →  start_translation()
   `Waiting: n row(s)` (each row in verbose). Why: the owner's request. Errors found in a fresh
   English article (often fixed in the first days) are corrected before they are copied into
   every language, which saves fix-ups and retranslation cost.
-  **In practice the wait is 72–84 h.** Translation runs start only after the two daily scheduled
-  scans, so a post is picked up by the first run after its 72 h are up.
+  **In practice the wait is 72–87 h.** Translation runs start only after the two daily scheduled
+  scans, so a post is picked up by the first run after its 72 h are up. GitHub starts those scans
+  hours late (see Scheduling), so gaps between them are about 8–15 h, not 12 h. The first estimate
+  was 72–84 h; it was corrected on 26 Nov 2026.
   **Rollout (20 Nov 2026):**
   - Commit `fc15060` was pushed at about 09:20 UTC. A manual scan followed at 09:25–09:27 UTC
     (run 44710572846, success on all 6 domains). It added the Ready After column to every domain
@@ -352,6 +359,13 @@ row would have to be added again.
 
 - `scan-missing-translations.yml` runs at **00:00 and 12:00 UTC** (matrix of all 6 domains,
   `fail-fast: false` so one domain's failure doesn't cancel the others).
+- **GitHub starts scheduled runs hours late** (cron is best-effort under load). Observed 18–26 Nov
+  2026: the 00:00 scan started between **04:28 and 07:51 UTC**, and the 12:00 scan between **19:11
+  and 23:33 UTC**. Before 18 Nov, the single 00:00 scan started at 02:36–05:57. The chained
+  translation runs start later by the same amount. Nothing is broken and the workflow isn't
+  changed: two scans and two translation runs per blog still happen each day, just later than the
+  cron says. Gaps between scans vary from about 8 h to 15 h. When planning a manual scan, check
+  `gh run list` rather than the clock (see RUNBOOK).
 - The five maintained blogs' `translate-blog-*.yml` have **no schedule of their own**: they start on
   `workflow_run` when a **scheduled** scan finishes as success or failure (a failure is usually
   another domain's leg; the queue is persistent, so this blog's is usable — and Step 2 re-checks files

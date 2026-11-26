@@ -7,6 +7,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Documented
+- **Scheduled scans start hours late** (found 24 Nov, recorded 26 Nov 2026). GitHub's cron is best-effort. From 18 to 26 Nov the 00:00 UTC scan started at 04:28–07:51 and the 12:00 scan at 19:11–23:33, and the chained translation runs start later by the same amount. Two runs per blog a day still happen, so the workflows are unchanged. The settling-time estimate is corrected from 72–84 h to **72–87 h** (gaps between scans are 8–15 h). RUNBOOK now says to check `gh run list --status in_progress` before a manual scan, not the clock (ORCHESTRATION, RUNBOOK, ARCHITECTURE, both READMEs)
+
 ### Changed
 - **Notes headline** (24 Nov 2026): a queue row's Notes now start with a short **headline on line 1** giving the main reason, so a web page (the dashboard) can show just that line. Details (still `;`-delimited) are on line 2, and the `⏳ Waiting until …` line stays last. Headlines:
   - MISSING: `New Post` (was `New post`) / `N of M languages missing`
@@ -14,6 +17,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - ISSUE (`queue_add.py` / `add_to_queue()`): the `--reason` text, then `Requested by <source>`. It used to be the reason only
   - EXTRA and the `⚠️ Invalid: …` line (kept on top of an invalid row) are unchanged
   - Names: `scan_helpers.display_author()` maps known git logins (`AUTHOR_NAMES`: `shoaibkhan-aspose` → Shoaib Khan, `mustafabutt-dev` → Mustafa Butt). Other login-like names (no spaces, with `-`, `_` or `.`) become capitalised words, e.g. `optimizer-agent` → Optimizer Agent, `roy.wang` → Roy Wang. Readable names such as `Muzammil Khan` are kept
+  - Rolled out on 24 Nov 2026: commit `48b2262`, then, once the four running translation runs had finished, a manual scan at 11:14 UTC (run 45382374825, success on all 6 domains) rewrote the open rows' Notes. The scheduled scans since then have all succeeded.
   - No migration is needed: every scan rewrites the scanner's Notes, so open rows switch at the next scheduled scan. ISSUE rows that already exist and `history` rows of closed posts keep the old text. The dashboard's waiting-line filter already checks every line, so it needs no change (dashboard not changed, as the user asked)
 
 ### Added
@@ -24,7 +28,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Step 2 holds such rows back (`translator.split_settled()` / `scan_queue.is_settled()`), before the language budget, so they don't use it. The run logs `Waiting: n row(s)`.
   - **Urgent** rows (forced by a person) and **ISSUE** rows (reviewed requests) don't wait. A blank Ready After counts as ready: no git history (local mirror), manual rows, and tabs from before the column existed.
   - Step 2 now reads Ready After as column 11 (`QUEUE_READ_COLUMNS`).
-  - In practice the wait is 72–84 h, because translation runs follow only the two daily scheduled scans.
+  - In practice the wait is 72–87 h (first estimated as 72–84 h), because translation runs follow only the two daily scheduled scans, which GitHub starts hours late.
   - Rolled out on 20 Nov 2026: commit `fc15060`, then a manual scan (run 44710572846, all 6 domains succeeded) added the column to every tab. Its chained translate runs were skipped as designed. Results are recorded in ORCHESTRATION.md (Settling time).
   - RUNBOOK explains why "skipped" alert and translate runs are normal, and why a manual scan must not overlap a translation run.
   - Tests: `test_settling_time.py`, plus the waiting-note and Ready After cases in `test_scan_missing_translations.py` and the column-11 read in `test_consolidated_scan_sheet.py`.

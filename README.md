@@ -134,7 +134,7 @@ Enable branch protection on `main` requiring these checks so nothing merges with
 
 ### Operational workflows
 
-The scan runs at 00:00 and 12:00 UTC; the five maintained blogs' translation workflows start when a scheduled scan finishes (`workflow_run`) — two runs per blog a day, 2 posts' worth each (limit × the blog's languages), one run per blog at a time. All can be triggered manually via `workflow_dispatch`:
+The scan runs at 00:00 and 12:00 UTC (GitHub usually starts it 4–11 h late; see docs/ORCHESTRATION.md, Scheduling); the five maintained blogs' translation workflows start when a scheduled scan finishes (`workflow_run`) — two runs per blog a day, 2 posts' worth each (limit × the blog's languages), one run per blog at a time. All can be triggered manually via `workflow_dispatch`:
 
 | Workflow file | Domain | Schedule (UTC) | What it does |
 |---------------|--------|----------------|--------------|
