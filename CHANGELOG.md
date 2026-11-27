@@ -7,6 +7,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Git conflict markers committed** (27 Nov 2026): in blog.groupdocs.cloud commit `ec990f7b` (09:16) 4 csv-to-jpg translations (de, id, tr, uk) were committed with `<<<<<<< Updated upstream` / `>>>>>>> Stashed changes`. While the run was translating, the Health and Recovery Agent's fix `4b6eda6a` changed the same files. `git merge --ff-only --autostash` re-applied the agent's files, the re-apply conflicted, git left the markers, the step did not fail, and `git add content/` committed them.
+  - All seven translate workflows (`translate-blog-*.yml` and `translate-blogs.yml`) now run `sync_with_remote.py --ref origin/<branch>` instead: it saves the run's added, changed and deleted `content/` files, `git reset --hard`s to the remote, and writes them back. The agent's full retranslation wins; if the English changed meanwhile, the next scan flags the file OUTDATED again. A file whose post has no English `index.md` on the remote any more is not written back (`::warning::`).
+  - `commit_translations.py` never commits a file with a `^<<<<<<< ` / `^>>>>>>> ` line: it unstages it with `::error::Not committed - git conflict markers in <file>`, and the other files are committed as usual.
+  - Tests: `test_sync_with_remote.py` (real git repos with a bare origin: same file changed on the remote, new file on both sides, EXTRA deletion, post removed on the remote, nothing changed), `test_commit_translations.py` (marker files skipped, look-alikes such as a setext `=======` heading are not markers), `test_workflows.py` (no `--autostash` / `git merge`, order sync → `git add` → commit).
+
 ### Documented
 - **Scheduled scans start hours late** (found 24 Nov, recorded 26 Nov 2026). GitHub's cron is best-effort. From 18 to 26 Nov the 00:00 UTC scan started at 04:28–07:51 and the 12:00 scan at 19:11–23:33, and the chained translation runs start later by the same amount. Two runs per blog a day still happen, so the workflows are unchanged. The settling-time estimate is corrected from 72–84 h to **72–87 h** (gaps between scans are 8–15 h). RUNBOOK now says to check `gh run list --status in_progress` before a manual scan, not the clock (ORCHESTRATION, RUNBOOK, ARCHITECTURE, both READMEs)
 

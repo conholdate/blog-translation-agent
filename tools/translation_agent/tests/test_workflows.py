@@ -54,3 +54,14 @@ def test_one_run_per_blog_and_budget_at_most_three(name):
     assert wf["concurrency"]["cancel-in-progress"] is False
     limit = wf["on"]["workflow_dispatch"]["inputs"]["limit"]
     assert max(int(o) for o in limit["options"]) <= 3 and int(limit["default"]) <= 3
+
+
+@pytest.mark.parametrize("name", TRANSLATE)
+def test_sync_resets_and_writes_back_instead_of_autostash(name):
+    """`git merge --ff-only --autostash` committed conflict markers (ec990f7b, 27 Nov 2026)."""
+    steps = load(name)["jobs"]["translate-blog-posts"]["steps"]
+    run = next(s["run"] for s in steps if s.get("name") == "Prepare Git for Commit")
+    code = "\n".join(line for line in run.splitlines() if not line.strip().startswith("#"))
+    assert "--autostash" not in code and "git merge" not in code
+    assert code.index("sync_with_remote.py") < code.index("git add content/") \
+        < code.index("commit_translations.py")

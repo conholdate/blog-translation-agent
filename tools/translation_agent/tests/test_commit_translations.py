@@ -125,3 +125,45 @@ class TestCommitStagedTranslations:
             "content/words/post-a/index.fr.md",
             "content/words/post-a/index.ja.md",
         ]
+
+
+class TestConflictMarkers:
+    """ec990f7b (blog.groupdocs.cloud, 27 Nov 2026) committed `<<<<<<< Updated upstream`."""
+
+    MARKED = (
+        "---\ntitle: Post A (de)\n---\n\n"
+        "<<<<<<< Updated upstream\n=======\napi_client = ApiClient(configuration)\n"
+        ">>>>>>> Stashed changes\n"
+    )
+
+    def test_file_with_markers_is_not_committed_others_are(self, tmp_path, monkeypatch, capsys):
+        repo = _init_repo(tmp_path)
+        post_a = _seed_source_post(repo, "post-a", "Post A")
+        _add_translations(post_a, "Post A", ["fr"])
+        (post_a / "index.de.md").write_text(self.MARKED, encoding="utf-8")
+        _run(["git", "add", "content/"], repo)
+        monkeypatch.chdir(repo)
+
+        count = commit_staged_translations("blog.conholdate.com")
+
+        assert count == 1
+        assert _committed_files(repo, "HEAD") == ["content/words/post-a/index.fr.md"]
+        assert "::error::Not committed - git conflict markers in content/words/post-a/index.de.md" \
+            in capsys.readouterr().out
+
+    def test_only_markers_means_no_commit(self, tmp_path, monkeypatch):
+        repo = _init_repo(tmp_path)
+        post_a = _seed_source_post(repo, "post-a", "Post A")
+        (post_a / "index.de.md").write_text(self.MARKED, encoding="utf-8")
+        _run(["git", "add", "content/"], repo)
+        monkeypatch.chdir(repo)
+
+        assert commit_staged_translations("blog.conholdate.com") == 0
+        assert _log_subjects(repo) == ["seed post-a"]
+
+    def test_lookalikes_are_not_markers(self, tmp_path):
+        from commit_translations import has_conflict_markers
+        path = tmp_path / "index.de.md"
+        # a setext heading (=======), a quote (>), an arrow in text, a marker inside a line
+        path.write_text("Title\n=======\n\n> quote\n>>>>>>>no space\ntext <<<<<<< x\n", encoding="utf-8")
+        assert has_conflict_markers(str(path)) is False

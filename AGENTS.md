@@ -164,6 +164,7 @@ Notes:
 ## Safety Rules
 
 - Agents must never modify the English source file (`index.md`) — only language variants (`index.{lang}.md`)
+- Never commit git conflict markers: the translate workflows sync with `sync_with_remote.py` (reset to the remote, write the run's files back), not `git merge --autostash`, and `commit_translations.py` unstages any file with a `^<<<<<<< ` / `^>>>>>>> ` line (since 27 Nov 2026)
 - Agents must validate `PROFESSIONALIZE_API_KEY` is present before starting any LLM call
 - Agents must validate Google credentials before accessing any sheet
 - Metrics failures must not halt the main pipeline

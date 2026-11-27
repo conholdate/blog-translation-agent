@@ -409,13 +409,19 @@ row would have to be added again.
 
 ### Committing (translate workflows)
 
-1. `git fetch origin && git merge --ff-only --autostash origin/<branch>` — the remote may have moved
-   during the run. New translations are untracked and survive the merge as-is; retranslated files
-   are modified tracked files, so `--autostash` sets them aside and puts them back. (Without it, a
-   remote change to the same file aborted the merge and the run's work was lost.) If the remote
-   changed the very same translation file, the stash can't be re-applied and the step fails — rare;
-   re-run the post.
-2. `git add content/`, then `commit_translations.py` makes **one commit per post**. The message
+1. `git fetch origin`, then `sync_with_remote.py --ref origin/<branch>` — the remote may have moved
+   during the run (up to 5 h). It saves every `content/` file the run added, changed or deleted,
+   `git reset --hard`s to the remote and writes the files back (deletions re-applied). The agent's
+   version wins: a run replaces the whole file, and if the English changed meanwhile the next scan
+   flags it OUTDATED again. A file whose post has no English `index.md` on the remote any more is not
+   written back (`::warning::`).
+   Until 27 Nov 2026 this was `git merge --ff-only --autostash`. When the remote had changed the same
+   translation file, the autostash re-apply conflicted, git left `<<<<<<< Updated upstream` /
+   `>>>>>>> Stashed changes` in the files without failing the step, and they were committed
+   (blog.groupdocs.cloud `ec990f7b`, 4 files, after the Health and Recovery Agent's `4b6eda6a`).
+2. `git add content/`, then `commit_translations.py` makes **one commit per post**. It never commits a
+   file with a `^<<<<<<< ` / `^>>>>>>> ` line: such a file is unstaged with
+   `::error::Not committed - git conflict markers in <file>` and the other files go ahead. The message
    (`build_commit_message.py`) follows each staged file's git status
    (`git diff --cached --name-status`):
 

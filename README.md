@@ -47,7 +47,8 @@ blog-translation-agent/
 │   │   ├── scan_helpers.py
 │   │   ├── link_localizer.py       # /{lang}/ on internal links whose page exists (posts, home page)
 │   │   ├── build_commit_message.py
-│   │   ├── commit_translations.py
+│   │   ├── commit_translations.py  # one commit per post; never commits git conflict markers
+│   │   ├── sync_with_remote.py     # reset to the remote, write the run's files back (before commit)
 │   │   ├── git_repo_utils.py
 │   │   ├── io_google_spreadsheet.py
 │   │   ├── utils.py

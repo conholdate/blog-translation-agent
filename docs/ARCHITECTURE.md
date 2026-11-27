@@ -54,7 +54,8 @@ One agent. Four pipeline steps. Two implementation directories.
 | Sheets I/O | `io_google_spreadsheet.py` | Reads/writes Google Sheets via service account credentials |
 | Git Utils | `git_repo_utils.py` | Clones or pulls the six blog repositories via GitHub PAT |
 | Commit Message Builder | `build_commit_message.py` | Builds a descriptive commit title/body from the staged files (post title + per-language list), worded by each file's git status: added → "Translate articles", modified → "Retranslate articles", deleted → "Remove extra translations", mixed → "Update translations" |
-| Per-post committer | `commit_translations.py` | Run by all 7 translate workflows after `git add content/`: reads `git diff --cached --name-status` and makes one commit per post with the message above |
+| Remote sync | `sync_with_remote.py` | Run by all 7 translate workflows after `git fetch`: saves the run's `content/` changes, resets to `origin/<branch>`, writes them back (the agent's version wins). Replaced `git merge --ff-only --autostash` on 27 Nov 2026, which committed conflict markers |
+| Per-post committer | `commit_translations.py` | Run by all 7 translate workflows after `git add content/`: reads `git diff --cached --name-status` and makes one commit per post with the message above; files with git conflict markers are unstaged and reported, never committed |
 | Metrics | `utils.py` | POSTs job metrics to two Google Apps Script webhooks (team + prod) |
 | Config | `config.py` | Single source of truth for all constants and env-var-backed secrets |
 
@@ -125,7 +126,8 @@ blog-translation-agent/
 │   │   ├── git_repo_utils.py               # Clone / pull blog repos
 │   │   ├── io_google_spreadsheet.py        # Google Sheets read/write
 │   │   ├── build_commit_message.py         # Descriptive git commit title/body
-│   │   ├── commit_translations.py          # One commit per post (used by translate workflows)
+│   │   ├── commit_translations.py          # One commit per post (used by translate workflows); never commits conflict markers
+│   │   ├── sync_with_remote.py             # Reset to the remote and write the run's files back (translate workflows)
 │   │   ├── utils.py                        # Metrics (REST API)
 │   │   ├── config.py                       # All constants + env vars
 │   │   └── tests/
@@ -175,7 +177,7 @@ blog-translation-agent/
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `scan-missing-translations.yml` | 00:00 and 12:00 UTC (GitHub starts it 4–11 h late) + manual | Runs scanner for all 6 domains (blog repo checked out with full history for the OUTDATED check); `fail-fast: false` |
-| `translate-blog-*.yml` (per domain) | When a scheduled scan finishes (`workflow_run`; not groupdocs.com) + manual | Works the queue by priority within a language budget (limit × the blog's languages, default 2 posts' worth) and a 5 h time limit, syncs with `git merge --ff-only --autostash`, commits one commit per post; one run per blog at a time (`concurrency`) |
+| `translate-blog-*.yml` (per domain) | When a scheduled scan finishes (`workflow_run`; not groupdocs.com) + manual | Works the queue by priority within a language budget (limit × the blog's languages, default 2 posts' worth) and a 5 h time limit, syncs with `sync_with_remote.py` (reset to the remote, write the run's files back), commits one commit per post (never conflict markers); one run per blog at a time (`concurrency`) |
 | `translate-blogs.yml` | Manual dispatch | Translates a chosen domain, product, author, and limit |
 
 **Release & alerts:**

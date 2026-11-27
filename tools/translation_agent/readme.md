@@ -230,7 +230,8 @@ tools/translation_agent/
 ├── git_repo_utils.py              # Clone / pull blog repos via GitHub PAT
 ├── io_google_spreadsheet.py       # Google Sheets: queue sync / read, cleanup, history, comments, add_to_queue
 ├── build_commit_message.py        # Commit title/body from staged files (Translate / Retranslate / Remove)
-├── commit_translations.py         # One commit per post, used by the translate workflows
+├── commit_translations.py         # One commit per post, used by the translate workflows; never commits conflict markers
+├── sync_with_remote.py            # Before committing: reset to the remote, write the run's files back
 ├── utils.py                       # Metrics webhook calls
 ├── config.py                      # All constants and env-var-backed secrets
 └── tests/

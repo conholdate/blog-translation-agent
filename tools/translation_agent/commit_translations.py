@@ -9,13 +9,40 @@ Reuses the grouping/message-building already in build_commit_message.py so
 each post's commit message matches the single-post format exactly. Each file's
 git status picks the wording: added -> "Translate articles", modified ->
 "Retranslate articles" (OUTDATED rows), deleted -> "Remove extra translations".
+
+Git conflict markers are never committed: a staged file with a line starting
+with `<<<<<<< ` or `>>>>>>> ` is unstaged and reported, the other files are
+committed as usual (ec990f7b on blog.groupdocs.cloud, 27 Nov 2026, put
+`<<<<<<< Updated upstream` on 4 live pages).
 """
 
 import argparse
+import os
+import re
 import subprocess
 import sys
 
 from build_commit_message import group_by_post, build_message
+
+CONFLICT_MARKER = re.compile(r"^(<<<<<<<|>>>>>>>) ", re.MULTILINE)
+
+
+def has_conflict_markers(path: str) -> bool:
+    """True when the file has a git conflict marker line (`<<<<<<< x` / `>>>>>>> x`)."""
+    if not os.path.isfile(path):
+        return False
+    with open(path, encoding="utf-8", errors="replace") as f:
+        return bool(CONFLICT_MARKER.search(f.read()))
+
+
+def unstage_conflicted(statuses: dict) -> list:
+    """Unstage files that hold conflict markers; returns their paths."""
+    bad = [p for p in statuses if has_conflict_markers(p)]
+    if bad:
+        subprocess.run(["git", "reset", "-q", "--", *bad], check=True)
+        for path in bad:
+            print(f"::error::Not committed - git conflict markers in {path}")
+    return bad
 
 
 def get_staged_changes() -> dict:
@@ -39,6 +66,8 @@ def get_staged_files() -> list:
 def commit_staged_translations(domain: str) -> int:
     """Commit each staged post separately. Returns the number of commits made."""
     statuses = get_staged_changes()
+    for path in unstage_conflicted(statuses):
+        del statuses[path]
     groups = group_by_post(list(statuses))
 
     if not groups:

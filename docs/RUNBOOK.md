@@ -95,7 +95,9 @@ The agent only writes language variants (`index.{lang}.md`) — it never modifie
 | Sheet API quota / 429 | Rate limit | Re-run later; reduce `limit`. |
 | Metrics not recorded | Metrics endpoint/key issue | Non-blocking by design — fix `METRICS_*`, no pipeline impact. |
 | Scan log: `No git history for … — OUTDATED check skipped` | Blog repo checked out without history | Keep `fetch-depth: 0` in `scan-missing-translations.yml`. Locally expected (the test mirror has no history). |
-| Translate workflow fails at `git merge --ff-only --autostash` with a stash conflict | Someone pushed a change to the same translation file the run retranslated | Re-run the post; the retranslation will start from the new remote version. |
+| Log `::error::Not committed - git conflict markers in <file>` | The file had `<<<<<<< ` / `>>>>>>> ` lines when it was staged (since 27 Nov 2026 the sync step no longer creates them) | Nothing was committed for that file. Check where the markers came from, remove them and requeue the language. |
+| Log `::warning::Not written back (no English index.md …)` | The post was moved or removed on the remote during the run | Expected; the translation was dropped. |
+| `<<<<<<< Updated upstream` text on a live page | Before 27 Nov 2026 `git merge --ff-only --autostash` committed conflict markers when someone changed the same translation during a run | Fixed by `sync_with_remote.py`. Remove the markers or requeue the language; `code_block_report.py` reports `markers`. |
 | Scan sheet `Comments` cells show `#ERROR!` | A Comments cell was written `USER_ENTERED` (parsed as a formula) | Code writes every queue / history cell `RAW` (`append_queue_comments`, `sync_domain_queue`, `append_history_rows`; fixed 17 Nov 2026, queue since 18 Nov 2026). Fix old cells by hand. |
 
 ---
