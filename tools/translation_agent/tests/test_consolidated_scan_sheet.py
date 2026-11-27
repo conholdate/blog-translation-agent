@@ -301,10 +301,20 @@ class TestAddToQueue:
     def test_held_rows_do_not_count(self, ws):
         assert gs.add_to_queue(DOMAIN, "medical", "p", ["de"], "x") == ["de"]
 
-    def test_priority_and_all_languages(self, ws):
-        assert gs.add_to_queue(DOMAIN, "medical", "p", [], "x", priority="Urgent") == ["(all)"]
+    def test_priority_and_all_languages_written_out(self, ws):
+        """No langs = every language of the blog, listed (a blank cell was invisible, 27 Nov 2026)."""
+        blog = [l for l in config.domains_data[DOMAIN][config.KEY_SUPPORTED_LANGS].split("|") if l]
+        expected = [l for l in blog if l != "fr"]       # fr: the open OUTDATED row already has it
+        assert gs.add_to_queue(DOMAIN, "medical", "p", [], "x", priority="Urgent") == expected
         row = as_dicts(ws)[-1]
-        assert row["Priority"] == "Urgent" and row["Target Translations"] == ""
+        assert row["Priority"] == "Urgent"
+        assert row["Target Translations"] == ", ".join(expected) and row["Count"] == str(len(expected))
+
+    def test_asking_for_all_languages_twice_adds_one_row(self, ws):
+        assert gs.add_to_queue(DOMAIN, "medical", "p", [], "x")
+        rows = len(as_dicts(ws))
+        assert gs.add_to_queue(DOMAIN, "medical", "p", [], "x") == []
+        assert len(as_dicts(ws)) == rows
 
     def test_empty_tab_gets_a_header(self, monkeypatch):
         ws = FakeWorksheet([])

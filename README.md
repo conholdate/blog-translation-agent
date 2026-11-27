@@ -46,6 +46,8 @@ blog-translation-agent/
 │   │   ├── scan_missing_translations.py
 │   │   ├── scan_helpers.py
 │   │   ├── link_localizer.py       # /{lang}/ on internal links whose page exists (posts, home page)
+│   │   ├── queue_add.py            # request a retranslation (ISSUE row)
+│   │   ├── queue_edit.py           # change a queued post's Priority / languages (dry run unless --apply)
 │   │   ├── build_commit_message.py
 │   │   ├── commit_translations.py  # one commit per post; never commits git conflict markers
 │   │   ├── sync_with_remote.py     # reset to the remote, write the run's files back (before commit)

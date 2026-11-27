@@ -315,7 +315,10 @@ translator.py  →  start_translation()
   untouched; the workflow then commits what was done. Why: GitHub kills a job at 6 h, and a killed
   job commits nothing (~4.3 min per translation, so 63 translations ≈ 4.5 h; long posts take longer).
 - ISSUE rows behave like OUTDATED rows: they overwrite the existing translation; an ISSUE row with
-  blank languages means every language of the blog (`fill_issue_langs()`).
+  blank languages means every language of the blog (`fill_issue_langs()`). Since 27 Nov 2026
+  `add_to_queue()` / `queue_add.py` write the full list when no languages are given, so only rows
+  typed by hand can still be blank. Before, the blank cell hid the languages in the sheet and a second
+  "all languages" request was not recognised as a duplicate.
 - `drop_existing_translations()` drops languages whose file already exists (stale sheet) for MISSING
   rows only; OUTDATED rows pass through, their files exist by definition.
 

@@ -8,6 +8,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **`queue_add.py` without `--langs` left Target Translations blank** (27 Nov 2026): "all languages" was written as an empty cell (Count 0), filled in only when Step 2 read the row (`fill_issue_langs()`). People could not see the languages, and the duplicate check was skipped, so asking twice queued the post twice. `add_to_queue()` now writes the blog's full language list (minus languages an open row already retranslates) and returns it instead of `['(all)']`; the CLI dry run shows the list. `fill_issue_langs()` stays for rows typed by hand. Tests in `test_consolidated_scan_sheet.py` (list written out, second request adds nothing)
 - **Code blocks split and code comments translated** (27 Nov 2026, reported by the Health and Recovery Agent): blog.groupdocs.cloud commit `ec990f7b` (09:16) retranslated `csv-to-jpg-conversion-in-python-quick-guide-for-developers`. The model put a closing fence after the first code line, at a blank line, and dropped the real one, so half of each code sample rendered as text and the next paragraph as code. This happened in 14 languages (English 28 fence lines, German 32). Code comments were translated too (`# --- Konfiguration ---`). Causes:
   - the chunker splits at blank lines and re-joined code blocks only while the ``` count was odd;
   - `_code_fence_count_mismatched` compares counts only, so a moved fence passed;
@@ -26,6 +27,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - Tests: `test_sync_with_remote.py` (real git repos with a bare origin: same file changed on the remote, new file on both sides, EXTRA deletion, post removed on the remote, nothing changed), `test_commit_translations.py` (marker files skipped, look-alikes such as a setext `=======` heading are not markers), `test_workflows.py` (no `--autostash` / `git merge`, order sync → `git add` → commit).
 
 ### Added
+- `queue_edit.py` (27 Nov 2026) — by hand: sets Priority and/or Target Translations + Count on a post's open queue rows (`--priority`, `--langs` / `--all-langs`, `--issue`). Dry run unless `--apply`; the tab is backed up as `bak-YYYYMMDD-HHMM-<tab>` first; rows are found by key at write time; cells written RAW. Tests: `test_queue_edit.py`. First use is recorded under Documented
 - `code_block_report.py` (27 Nov 2026) — read-only report of translations whose code blocks differ from the English (no file, sheet or LLM changes). Categories: `markers`, `structure` (fence lines differ, so the page renders wrongly), `code` (same fences, code differs — mostly translated comments), `legacy` (older translations pasted `{{< gist >}}` code inline; renders fine), `ok`. `--csv` / `--list` give the files. First run on the local checkouts, 27 Nov 2026 (checkouts 0–8 days old):
 
   | Blog | structure | code | legacy | markers | ok |
@@ -40,6 +42,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The report finds the handoff's known cases: csv-to-jpg `structure` in all 18 languages, json-to-html in exactly fa, id and zh-hant. The one `markers` file is blog.aspose.com `note/2022-06-28-convert-onenote-to-pdf-using-java/index.fr.md`: a conflict committed in 2024 whose markers were then translated ("Mis à jour en amont"). `structure` also counts translations that are older than an English rewrite (those are OUTDATED in the queue anyway). Nothing is requeued yet: requeuing is a separate decision.
 
 ### Documented
+- **Code-block posts requeued on blog.groupdocs.cloud** (27 Nov 2026, after `6a9002c` / `a22f921` were pushed): two ISSUE rows via `queue_add.py`, source Manual. Neither post had an open row anymore, although the handoff listed 4 + 3 languages as queued.
+  - csv-to-jpg (`2026-08-24-csv-to-jpg-conversion-in-python-quick-guide-for-developers`), all 18 languages, "Code blocks split, comments translated (ec990f7b)". It was added without `--langs`, so the cell was blank (the bug fixed above); `queue_edit.py --all-langs` filled in the 18 languages
+  - json-to-html (`2026-07-08-comprehensive-json-to-html-conversion-tutorial-in-php`), fa, id, zh-hant, "Code blocks damaged by an older run". Its other 15 languages have translated code comments only (`code` in the report) and were not queued
+  - Both raised to **Urgent** at the owner's request with `queue_edit.py --apply` (backup tabs `bak-20261127-2310-blog.groupdocs.cloud`, `bak-20261127-2311-blog.groupdocs.cloud`). Two older ISSUE rows (36 translations) were ahead of them and would have filled the next run's budget of 2 × 18
 - **Scheduled scans start hours late** (found 24 Nov, recorded 26 Nov 2026). GitHub's cron is best-effort. From 18 to 26 Nov the 00:00 UTC scan started at 04:28–07:51 and the 12:00 scan at 19:11–23:33, and the chained translation runs start later by the same amount. Two runs per blog a day still happen, so the workflows are unchanged. The settling-time estimate is corrected from 72–84 h to **72–87 h** (gaps between scans are 8–15 h). RUNBOOK now says to check `gh run list --status in_progress` before a manual scan, not the clock (ORCHESTRATION, RUNBOOK, ARCHITECTURE, both READMEs)
 
 ### Changed

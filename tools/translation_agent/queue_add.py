@@ -12,7 +12,7 @@ Priority (default Normal) and closes it once its languages are retranslated.
         --post pdf/2024-05-01-convert-pdf-to-word --langs "fr, de" \\
         --reason "Tables left in English" [--source quality-agent] [--priority Urgent]
 
-    --langs omitted = every language of the blog.  --dry-run shows the row without writing.
+    --langs omitted = every language of the blog, written out in the row.  --dry-run shows the row without writing.
 """
 
 import argparse
@@ -51,7 +51,7 @@ def main(argv=None) -> int:
         print(f"❌ Not a language of {args.domain}: {', '.join(bad)} (supported: {', '.join(supported)})")
         return 2
 
-    print(f"{args.domain} · {product}/{slug} · ISSUE · {', '.join(langs) or 'all languages'} · "
+    print(f"{args.domain} · {product}/{slug} · ISSUE · {', '.join(langs or supported)} · "
           f"{args.priority or config.DEFAULT_PRIORITY[config.ISSUE_ISSUE]} · {args.source} · {args.reason}")
     if args.dry_run:
         print("Dry run — nothing written.")

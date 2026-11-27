@@ -430,10 +430,11 @@ def add_to_queue(domain: str, product: str, slug: str, langs: List[str], reason:
     retranslates (ISSUE or OUTDATED) are skipped, so asking twice doesn't
     duplicate work; the rest go into one new row at the bottom (Priority:
     given, else the issue's default; Missing Since: today). Blank langs = every
-    language of the blog (resolved by the next scan's validation).
+    language of the blog, written out in full (since 27 Nov 2026; a blank cell
+    was invisible in the sheet and skipped the duplicate check).
 
-    Returns the languages added (['(all)'] for blank langs), [] if nothing was
-    new, or None if the queue couldn't be read or written. Never raises.
+    Returns the languages added, [] if nothing was new, or None if the queue
+    couldn't be read or written. Never raises.
     """
     try:
         ws = get_scan_worksheet(domain)
@@ -454,8 +455,10 @@ def add_to_queue(domain: str, product: str, slug: str, langs: List[str], reason:
                 tracked.update(queue.split_langs(row.get(config.KEY_MISSING_FILES)))
 
         wanted = list(dict.fromkeys(l.strip() for l in langs if l.strip()))
+        if not wanted:              # every language of the blog, listed so people can see it
+            wanted = [l for l in config.domains_data[domain][config.KEY_SUPPORTED_LANGS].split("|") if l]
         new = [l for l in wanted if l not in tracked]
-        if wanted and not new:
+        if not new:
             print(f"ℹ️  {domain}/{product}/{slug}: {', '.join(wanted)} already queued for retranslation.")
             return []
 
@@ -474,8 +477,8 @@ def add_to_queue(domain: str, product: str, slug: str, langs: List[str], reason:
         if header != old_header:            # new tab, or columns missing: write the header first
             ws.update([header], "A1", value_input_option="RAW")
         ws.append_rows(queue.to_values([row], header), value_input_option="RAW")
-        print(f"✅ Queued {domain}/{product}/{slug} for retranslation: {', '.join(new) or 'all languages'}.")
-        return new or ["(all)"]
+        print(f"✅ Queued {domain}/{product}/{slug} for retranslation: {', '.join(new)}.")
+        return new
     except Exception as e:
         print(f"❌ Could not add {domain}/{product}/{slug} to the queue: {e}", file=sys.stderr)
         return None

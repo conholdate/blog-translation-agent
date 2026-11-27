@@ -166,6 +166,14 @@ python tools/translation_agent/queue_add.py --domain blog.aspose.com \
   [--source <agent>] [--priority Urgent] [--dry-run]
 ```
 
+Without `--langs` the row lists every language of the blog. To change a queued post's Priority or
+languages later (dry run unless `--apply`; the tab is backed up first):
+
+```bash
+python tools/translation_agent/queue_edit.py --domain blog.groupdocs.cloud \
+  --post conversion/<post folder> [--issue ISSUE] [--priority Urgent] [--langs "fa, id" | --all-langs] [--apply]
+```
+
 ```bash
 python tools/translation_agent/translator.py \
   --domain <DOMAIN> \
@@ -225,6 +233,7 @@ tools/translation_agent/
 ├── scan_helpers.py                # Scanner helpers: front matter, git history, Notes text
 ├── scan_queue.py                  # Queue reconcile rules (pure logic, no sheet access)
 ├── queue_add.py                   # CLI: request a retranslation (ISSUE row)
+├── queue_edit.py                  # By hand: change a queued post's Priority / languages (dry run unless --apply)
 ├── reset_scan_queue.py            # One-time queue reset (18 Nov 2026; dry run unless --apply)
 ├── resort_queue.py                # Re-sort OUTDATED queue rows newest post first (dry run unless --apply)
 ├── git_repo_utils.py              # Clone / pull blog repos via GitHub PAT
