@@ -335,6 +335,33 @@ translator.py  →  start_translation()
 
 `Target Translations` on an `EXTRA` row holds comma-separated fragments (e.g. `"cs, pl, sv"` or `"tmp"`). Each reconstructs as `index.<fragment>.md` — the same convention `translate_files` uses to write output files — and is removed with `os.remove()`. The CI workflow's generic `git add content/` → commit → push (same mechanism that commits new translations) picks up the deletion automatically; no separate git logic is needed in Python.
 
+### Internal links
+
+`link_localizer.py` rewrites links to the same blog after each language is translated (absolute
+`https://blog.<domain>/…`, the bare `https://blog.<domain>`, root-relative `](/…)` and `href="/…"`;
+fenced code blocks are left alone). A link gets the `/{lang}/` prefix only when that page exists in
+the language, so a translation never points at a 404:
+
+| Link to | Result | Why |
+|---------|--------|-----|
+| A post with `index.{lang}.md` (on disk, or queued in the same run) | `/{lang}/<post url>` | Translation exists |
+| A post without it | English URL (listed as "EN links kept" in the queue comment) | Would be 404 |
+| Home page — `https://blog.<domain>/` or bare `https://blog.<domain>` (also `/#x`, `/?s=…`, root `](/)`) | `https://blog.<domain>/{lang}/` | Hugo renders a home page per language; a post is only translated into its blog's languages |
+| Sections, tags, archive, other pages | Unchanged | No language version (`/ko/conversion/`, `/ko/pdf/` are 404) |
+| Other domains, look-alike hosts (`blog.<domain>.example.com`, ports) | Unchanged | Not this blog |
+
+The decision is made from the English path, so a `/{lang}/` the LLM added itself is kept only when
+the page exists (removed from sections and untranslated posts; `…/ko` becomes `…/ko/` for the home page).
+
+*Home page added 27 Nov 2026.* Until then the home page was treated like a section: the Korean
+retranslation of blog.groupdocs.cloud `convert-doc-to-pdf-with-nodejs` (commit `56d501e7`, 26 Nov
+2026) got reference `[29]: https://blog.groupdocs.cloud/` although the LLM output had `/ko/` — the
+localizer removed it (found by the Health & Recovery Agent; post fixed by hand in `37e50596`). Checked
+live on 27 Nov 2026: `/ko/` is 200 on all five maintained blogs, `/ko/conversion/` (blog.groupdocs.cloud)
+and `/ko/pdf/` (blog.aspose.com) are 404. On blog.groupdocs.cloud, 26 English posts link the home page;
+older translations (made before the localizer) already link the language home page, so no sweep is needed.
+Bare-domain links (no trailing slash) were not matched at all before and are now localized too.
+
 ### Queue comments
 
 After each post, a comment (result, failed languages, English links kept) is appended to the
@@ -437,6 +464,7 @@ start_translation(domain, author, limit)
             │   │   └── _ai_should_retry()      # AI validation on failure
             │   └── reassemble chunks
             │
+            ├── LinkLocalizer.localize()        # /{lang}/ on internal links whose page exists
             ├── write_markdown_file(index.{lang}.md)
             └── send_metrics()
         │

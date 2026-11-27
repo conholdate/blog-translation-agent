@@ -6,8 +6,14 @@ A link to another post on the same blog gets the language prefix
 on disk (index.{lang}.md) or queued in the current run. Every other link is
 kept exactly as in the English post, so translations never point at a 404.
 
+The home page (https://{domain}/, also written bare as https://{domain}) always
+gets the prefix: Hugo renders a home page for every configured language, and a
+post is only translated into its blog's languages (checked live 2026-11-27:
+/ko/ is 200 on all five maintained blogs).
+
 Section and taxonomy pages (/total/, /tags/x/, ...) are not posts and are left
-unchanged: many of them don't exist in every language (or at all).
+unchanged: they don't exist in every language (2026-11-27: /ko/conversion/ on
+blog.groupdocs.cloud and /ko/pdf/ on blog.aspose.com are 404).
 """
 
 import re
@@ -57,9 +63,11 @@ class LinkLocalizer:
         self.kept_english: Dict[str, Set[str]] = {}
 
         host = re.escape(domain)
-        # Absolute links to this blog, or root-relative links in markdown / href targets
+        # Absolute links to this blog (with a path, or the bare domain — not followed by
+        # more host characters such as blog.aspose.cloud.example.com), or root-relative
+        # links in markdown / href targets
         self._link = re.compile(
-            rf'(?P<abs>https?://{host})(?P<abspath>/[^\s)"\'<>\]]*)'
+            rf'(?P<abs>https?://{host})(?:(?P<abspath>/[^\s)"\'<>\]]*)|(?![\w-]|\.\w|:\d))'
             rf'|(?P<lead>\]\(|href=["\'])(?P<relpath>/(?!/)[^\s)"\'<>\]]*)'
         )
         print(f"    🔗 Link index for {domain}: {len(self.url_index)} posts")
@@ -79,7 +87,13 @@ class LinkLocalizer:
     def _localize_path(self, path: str, lang: str) -> str:
         # The LLM may have added the prefix itself; decide from the English path.
         prefix = f'/{lang}/'
-        english = '/' + path[len(prefix):] if path.startswith(prefix) else path
+        base, suffix = re.match(r'([^?#]*)(.*)', path, re.DOTALL).groups()
+        if base == f'/{lang}' or base.startswith(prefix):
+            base = '/' + base[len(prefix):]
+        if not base.strip('/'):
+            # Home page ('/', or '' for the bare domain): exists in every language
+            return prefix + suffix
+        english = base + suffix
         exists = self.translation_exists(english, lang)
         if exists:
             return prefix + english.lstrip('/')
@@ -91,7 +105,7 @@ class LinkLocalizer:
     def _localize_segment(self, text: str, lang: str) -> str:
         def replace(m: re.Match) -> str:
             if m.group('abs'):
-                return m.group('abs') + self._localize_path(m.group('abspath'), lang)
+                return m.group('abs') + self._localize_path(m.group('abspath') or '', lang)
             return m.group('lead') + self._localize_path(m.group('relpath'), lang)
         return self._link.sub(replace, text)
 

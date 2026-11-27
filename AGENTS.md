@@ -8,7 +8,7 @@ explicitly approves it in the current session (see "User-Approved Changes").
 This file is a living document: agents keep it updated with the standing instructions agreed in
 discussions with the user (see "Standing Instructions").
 
-Last updated: 2026-11-24
+Last updated: 2026-11-27
 Authority: Shoaib Khan
 
 ---
@@ -170,7 +170,7 @@ Notes:
 - Per-file failures must be isolated — one failure must not stop processing of remaining files
 - `PRODUCTION_ENV` is auto-detected from the presence of `.env` at the project root (`True` in CI, `False` locally) — never set this manually from agent code
 - Markdown readers must open posts with `encoding='utf-8-sig'` — some editors save `index.md` with a UTF-8 BOM, which breaks `^---` frontmatter matching under plain `utf-8`
-- Internal links in a translation get the `/{lang}/` prefix only when the linked post's `index.{lang}.md` exists (on disk or queued in the same run); otherwise the English URL is kept. Non-post links (sections, tags, home) and other domains are left unchanged. This is handled by `tools/translation_agent/link_localizer.py` — the LLM prompt must not add prefixes itself
+- Internal links in a translation get the `/{lang}/` prefix only when the localized page exists; otherwise the English URL is kept. A post link is localized when the linked post's `index.{lang}.md` exists (on disk or queued in the same run). The blog's home page — `https://blog.<domain>/` or the bare `https://blog.<domain>` — always becomes `https://blog.<domain>/{lang}/` (every language has a home page). Section and tag links (no language version — e.g. `/ko/conversion/` is 404) and other domains are left unchanged; a `/{lang}/` the LLM put on them is removed. This is handled by `tools/translation_agent/link_localizer.py` — the LLM prompt must not add prefixes itself
 
 ---
 
@@ -209,4 +209,5 @@ with the date, and update `Last updated` above.
 | 2026-11-19 | Queue order within a priority: MISSING and ISSUE first in, first out (sheet order); OUTDATED newest post first (folder date — a 2026 post before a 2022 one). |
 | 2026-11-19 | Keep every operational script (resets, re-sorts, one-off sheet fixes) in the repo with tests and docs, never only in a temp/scratch folder — nothing may be lost. Scripts that change sheets are dry run by default, back up what they change, and record their results in the docs. |
 | 2026-11-20 | Settling time: translate a post only when **72 h (3 days) have passed since the last commit to its English `index.md`**. The same rule applies to new and updated/optimised posts, so English errors are fixed before they reach translations. Priority `Urgent` skips the wait; ISSUE rows don't wait; a post without git history counts as ready. |
+| 2026-11-27 | Localize an internal link whenever its language version exists: posts with `index.{lang}.md`, and the blog's home page (with or without the trailing slash) always → `https://blog.<domain>/{lang}/`. Pages without a language version keep the English URL. |
 | 2026-11-24 | Queue Notes start with a short **headline on line 1** giving the main reason, so the dashboard can show it: `New Post`, `Updated by <name> on <date>` (git logins shown as people's names), or an ISSUE row's reason. Details follow on line 2, still `;`-delimited. |

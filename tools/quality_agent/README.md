@@ -172,7 +172,7 @@ python quality_validator.py --domain all --limit 50 --key sk-xxxxxxxxx
 
 ## Step 4 — Quality Retranslator
 
-Reads the quality sheet and force-retranslates files where `AI Decision == RETRANSLATE` and `Status` is blank. The decision comes from the LLM as part of the Step 3 Phase B validation pass, not a locally re-derived threshold. Uses the `TranslationOrchestrator` from Step 2 — no changes to the original translator required.
+Reads the quality sheet and force-retranslates files where `AI Decision == RETRANSLATE` and `Status` is blank. The decision comes from the LLM as part of the Step 3 Phase B validation pass, not a locally re-derived threshold. Uses the `TranslationOrchestrator` from Step 2 — no changes to the original translator required. Internal links follow the Step 2 rule (`link_localizer.py`: `/{lang}/` on posts that exist in the language and on the home page; see ORCHESTRATION "Internal links").
 
 After retranslation, sets `Status = Fixed` and updates `Analysed At`. The validator automatically picks up `Status = Fixed` rows on its next run to fill `Error% after Fix`.
 

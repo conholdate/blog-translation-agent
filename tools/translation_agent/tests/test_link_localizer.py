@@ -71,9 +71,48 @@ class TestLocalize:
         src = f"[t](https://{DOMAIN}/fr/email/translated/)"
         assert localizer.localize(src, "fr") == src
 
-    def test_non_post_links_unchanged(self, localizer):
-        src = f"[s](https://{DOMAIN}/total/) [tag](https://{DOMAIN}/tags/email/) [h](https://{DOMAIN}/)"
+    def test_section_and_tag_links_unchanged(self, localizer):
+        src = f"[s](https://{DOMAIN}/total/) [tag](https://{DOMAIN}/tags/email/)"
         assert localizer.localize(src, "fr") == src
+
+    def test_llm_added_prefix_removed_from_section(self, localizer):
+        src = f"[s](https://{DOMAIN}/fr/total/)"
+        assert localizer.localize(src, "fr") == f"[s](https://{DOMAIN}/total/)"
+
+    def test_home_page_gets_prefix(self, localizer):
+        # Reference list entry as in convert-doc-to-pdf-with-nodejs (2026-11-26 retranslation)
+        src = f"[h](https://{DOMAIN}/)\n[29]: https://{DOMAIN}/\n"
+        assert localizer.localize(src, "ko") == f"[h](https://{DOMAIN}/ko/)\n[29]: https://{DOMAIN}/ko/\n"
+
+    @pytest.mark.parametrize("src, expected", [
+        (f"[h](https://{DOMAIN})", f"[h](https://{DOMAIN}/ko/)"),
+        (f"[29]: https://{DOMAIN}\n", f"[29]: https://{DOMAIN}/ko/\n"),
+        (f"Visit https://{DOMAIN}.", f"Visit https://{DOMAIN}/ko/."),
+        (f'<a href="https://{DOMAIN}">x</a>', f'<a href="https://{DOMAIN}/ko/">x</a>'),
+        (f"<https://{DOMAIN}>", f"<https://{DOMAIN}/ko/>"),
+        (f"[h](http://{DOMAIN})", f"[h](http://{DOMAIN}/ko/)"),
+    ])
+    def test_bare_domain_gets_prefix(self, localizer, src, expected):
+        assert localizer.localize(src, "ko") == expected
+
+    @pytest.mark.parametrize("src", [
+        f"[x](https://{DOMAIN}.example.com/)",
+        f"[x](https://{DOMAIN}-mirror.com/)",
+        f"[x](https://{DOMAIN}y/)",
+        f"[x](https://{DOMAIN}:8080/)",
+    ])
+    def test_lookalike_hosts_unchanged(self, localizer, src):
+        assert localizer.localize(src, "ko") == src
+
+    def test_home_page_with_llm_prefix_not_doubled(self, localizer):
+        src = f"[h](https://{DOMAIN}/ko/) [h2](https://{DOMAIN}/ko)"
+        assert localizer.localize(src, "ko") == f"[h](https://{DOMAIN}/ko/) [h2](https://{DOMAIN}/ko/)"
+
+    def test_home_page_relative_and_fragment(self, localizer):
+        src = f'[h](/) <a href="/">x</a> [f](https://{DOMAIN}/#latest) [q](https://{DOMAIN}/?s=pdf)'
+        assert localizer.localize(src, "ko") == (
+            f'[h](/ko/) <a href="/ko/">x</a> [f](https://{DOMAIN}/ko/#latest) [q](https://{DOMAIN}/ko/?s=pdf)'
+        )
 
     def test_relative_markdown_and_href_links(self, localizer):
         src = '[t](/email/translated/) <a href="/email/translated/">x</a> [o](/total/old-post/)'
