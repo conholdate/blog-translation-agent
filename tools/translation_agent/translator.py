@@ -24,6 +24,8 @@ import os
 
 from utils import send_metrics
 from link_localizer import LinkLocalizer
+from code_blocks import (protect_code_blocks, restore_code_blocks, placeholders_intact,
+                         only_placeholders, code_block_problem, CodeBlockMismatch)
 from collections import Counter
 from run_log import info, detail, group, set_verbose, fmt_duration, fmt_tokens
 from config import Stats
@@ -308,22 +310,25 @@ def build_history_comment(total: int = 0,
                           error: str = None,
                           draft: bool = False,
                           date: str = None,
-                          deferred: List[str] = ()) -> str:
+                          deferred: List[str] = (),
+                          failed_reasons: Dict[str, str] = None) -> str:
     """
     Build the per-post comment for the queue row's Comments column (it moves
     to the history tab with the row once the row is closed), e.g.
 
         - Date: 2026-10-29
         - ⚠️ Partial 18/21
-        - Failed: fa, he, uk
+        - Failed: fa (code blocks changed), he, uk
         - EN links kept (translated URL would be 404): /total/foo/ [fr, ar, de +18]
     """
     date = date or time.strftime("%Y-%m-%d")
     head = result_head(total, succeeded, skipped, failed, error, draft, deferred)
+    reasons = failed_reasons or {}
 
     lines = [f"- Date: {date}", f"- {head}"]
     if failed and not error:
-        lines.append(f"- Failed: {', '.join(failed)}")
+        lines.append("- Failed: " + ", ".join(
+            f"{l} ({reasons[l]})" if l in reasons else l for l in failed))
     if skipped:
         lines.append(f"- Already existed: {', '.join(skipped)}")
     if deferred:
@@ -633,7 +638,13 @@ class ContentTranslatorAgent:
 
     def _translate_content_chunk(self, domain:str, chunk: str, target_lang: str, max_retries: int = 3) -> str:
         """Translate a single chunk of markdown content with retry logic"""
+        # Code blocks were replaced by placeholder lines (code_blocks.py); a chunk
+        # with nothing else in it has nothing to translate.
+        if only_placeholders(chunk):
+            detail("   ⏭️ code only, not sent to the model")
+            return chunk
         detail(f"   🔄 Translating chunk...")
+        placeholder_broken = False
         # Check if this chunk should skip translation validation (code blocks, shortcodes)
         should_skip_validation = self._should_skip_translation_validation(chunk)
         # print(f"   🔍 Should skip validation: {should_skip_validation}")
@@ -670,6 +681,8 @@ class ContentTranslatorAgent:
                     Only translate the human-readable text inside attribute values (like alt text). Never wrap values
                     in parentheses, never add backslashes, and only escape a quote (\\") if that exact attribute value
                     already contains a literal double-quote character in the original.
+                13. Lines like ⟦CODE_0⟧ stand for code blocks. Keep every such line EXACTLY as it is, on its own
+                    line, in the same order. Never translate, change, merge, remove or add one.
         """
 
 
@@ -687,19 +700,21 @@ class ContentTranslatorAgent:
 
                 Below is the Markdown content to translate:
                 {chunk}"""
-            elif should_skip_validation:
-                # Previous attempt corrupted shortcode or code-fence syntax - ask the model to fix it
+            elif should_skip_validation or placeholder_broken:
+                # Previous attempt corrupted shortcode, code-fence or code-placeholder syntax - ask the model to fix it
                 detail(f"   🔄 Retrying translation (attempt {attempt + 1}/{max_retries}) to fix corrupted syntax...")
                 prompt = f"""IMPORTANT: Your previous translation corrupted the markdown syntax of this content. This either:
                 (a) altered Hugo shortcode attributes, for example by wrapping a value in escaped quotes or parentheses
                     like src=(\\"...\\") instead of src="...", or
-                (b) added or removed a ``` code fence marker, shifting where a code block opens/closes.
-                Either of these breaks the website build.
+                (b) added or removed a ``` code fence marker, shifting where a code block opens/closes, or
+                (c) changed, moved, merged, dropped or added a code placeholder line such as ⟦CODE_0⟧.
+                Any of these breaks the website.
 
                 Translate the provided markdown content to {self.config.language_names.get(target_lang, "")} language having code '{target_lang}'.
-                Keep ALL shortcode syntax and ``` fence markers EXACTLY as in the original - same count, same position,
-                same quoting style, no added backslashes or parentheses. Only translate the human-readable text (prose,
-                shortcode attribute text) - never translate code, and never add or remove a ``` marker.
+                Keep ALL shortcode syntax, ``` fence markers and ⟦CODE_n⟧ placeholder lines EXACTLY as in the original -
+                same count, same position, each placeholder on its own line, same quoting style, no added backslashes or
+                parentheses. Only translate the human-readable text (prose, shortcode attribute text) - never translate
+                code, and never add or remove a ``` marker or a placeholder.
 
                 CRITICAL_RULES to follow:
                 {CRITICAL_RULES}
@@ -735,6 +750,15 @@ class ContentTranslatorAgent:
             if self.token_tracker:
                 self.token_tracker.record(usage, "content_translate")
 
+            # Every code placeholder must come back unchanged, in order, on its own line
+            placeholder_broken = not placeholders_intact(chunk, translated_chunk)
+            if placeholder_broken:
+                detail(f"   ⚠️  Code placeholders changed on attempt {attempt + 1}")
+                if attempt == max_retries - 1:
+                    detail(f"   ❌ Code placeholders still changed after {max_retries} attempts, keeping original chunk")
+                    self._note("kept in English (code placeholder)")
+                    return chunk
+                continue  # Retry with the syntax-fix prompt
 
             # Check if translation was successful
             if should_skip_validation:
@@ -1137,6 +1161,7 @@ class TranslationOrchestrator:
             success_list = []
             skipped_list = []
             deferred = []
+            failed_reasons = {}     # lang -> short reason shown in the Comments column
 
             try:
 
@@ -1232,6 +1257,8 @@ class TranslationOrchestrator:
                             print("❌ Error:"+ msg)
                             sys.exit(1)
 
+                        if isinstance(e, CodeBlockMismatch):
+                            failed_reasons[missed_lang] = "code blocks changed"
                         info(f"    ❌ {missed_lang:<8} {type(e).__name__}: {' '.join(msg.split())[:150]}")
                         with group(f"{missed_lang} · traceback"):
                             traceback.print_exc()
@@ -1281,7 +1308,8 @@ class TranslationOrchestrator:
                     info(f"    🔗 EN links kept: {format_kept_links(kept, langs)}")
 
                 def comment_for(row_langs, langs=langs, failed=failed, kept=kept,
-                                success_list=success_list, skipped_list=skipped_list, deferred=deferred):
+                                success_list=success_list, skipped_list=skipped_list, deferred=deferred,
+                                failed_reasons=failed_reasons):
                     """Comment for one queue row, limited to the languages it tracks (None = all)."""
                     subset = set(row_langs) if row_langs is not None else set(langs)
                     return build_history_comment(
@@ -1292,6 +1320,7 @@ class TranslationOrchestrator:
                         kept_english = {p: ls & subset for p, ls in kept.items() if ls & subset},
                         lang_order   = langs,
                         deferred     = [l for l in deferred if l in subset],
+                        failed_reasons = failed_reasons,
                     )
 
                 history = self.log_post_comment(domain, slug, comment_for, run_langs=langs,
@@ -1445,9 +1474,13 @@ class TranslationOrchestrator:
         # Step 3: Translate content using ContentAgent
         # ============================================================================
         detail(f"\n📝 Step 3: Translating content ({self.content_agent.name})...")
+        # Code blocks never go to the model: each becomes a ⟦CODE_n⟧ line and is
+        # put back byte for byte after link localization (code_blocks.py).
+        protected_content, code_blocks = protect_code_blocks(content)
+        detail(f"   ✓ {len(code_blocks)} code block(s) kept out of the translation")
         translated_content = self.content_agent.translate(
             domain,
-            content, 
+            protected_content,
             target_lang
         )
         # print(f"   ✓ Content translated:\n{translated_content}\n")
@@ -1459,6 +1492,13 @@ class TranslationOrchestrator:
         # translation exists (on disk or queued in this run); keep the rest in
         # English so translations don't link to 404 pages.
         translated_content = self.get_link_localizer(domain).localize(translated_content, target_lang)
+        translated_content = restore_code_blocks(translated_content, code_blocks)
+
+        # Whole-file check: same fenced blocks as the English (count, fence lines,
+        # order, identical code). Otherwise this language is not written.
+        problem = code_block_problem(content, translated_content)
+        if problem:
+            raise CodeBlockMismatch(problem)
 
         # ============================================================================
         # Step 5: Write output file

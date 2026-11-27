@@ -7,7 +7,7 @@ Companion to [`ARCHITECTURE.md`](./ARCHITECTURE.md) and [`RUNBOOK.md`](./RUNBOOK
 
 | Data | Source | Sensitivity | Where it goes |
 |---|---|---|---|
-| Blog post Markdown (`index.md`, `index.{lang}.md`) | Public blog repos (Aspose/GroupDocs/Conholdate) | Public content | Translated variants written back to the same repos |
+| Blog post Markdown (`index.md`, `index.{lang}.md`) | Public blog repos (Aspose/GroupDocs/Conholdate) | Public content | Prose sent to the LLM endpoint for translation; fenced code blocks are not sent (placeholders, since 27 Nov 2026). Translated variants written back to the same repos |
 | Scan / quality results | Computed from the above | Operational | Google Sheets (domain tabs = persistent queue, `cleanup`, `history` = completed rows only; blog.groupdocs.com rows never go to history) |
 | Git commit metadata of the blog repos (commit date, author name, subject) | Public blog repos' history | Public (already visible on GitHub) | Scan sheet `Notes` column for `OUTDATED` rows; the English file's last commit time (+ 72 h) as the queue's `Ready After` (settling time, since 20 Nov 2026) |
 | Run metrics (run_id, durations, counts, token usage) | Pipeline runtime | Operational, non-PII | Metrics REST endpoint (`METRICS_API_URL`) |

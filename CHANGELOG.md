@@ -8,10 +8,36 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Code blocks split and code comments translated** (27 Nov 2026, reported by the Health and Recovery Agent): blog.groupdocs.cloud commit `ec990f7b` (09:16) retranslated `csv-to-jpg-conversion-in-python-quick-guide-for-developers`. The model put a closing fence after the first code line, at a blank line, and dropped the real one, so half of each code sample rendered as text and the next paragraph as code. This happened in 14 languages (English 28 fence lines, German 32). Code comments were translated too (`# --- Konfiguration ---`). Causes:
+  - the chunker splits at blank lines and re-joined code blocks only while the ``` count was odd;
+  - `_code_fence_count_mismatched` compares counts only, so a moved fence passed;
+  - nothing compared the code itself.
+  Fix — **code never goes to the model** (new `code_blocks.py`):
+  - `translate_file()` replaces each fenced block (``` or ~~~, together with the `CODE_SNIPPET` / `COMPLETE_CODE_SNIPPET` marker lines next to it, blank lines between included) with a `⟦CODE_n⟧` line, and puts the blocks back byte for byte after link localization. Code and its comments stay English; code in a block is not link-localized any more.
+  - Each chunk must return every placeholder exactly once, in order, on its own line (`placeholders_intact`). Otherwise it is retried with the syntax-fix prompt (now also naming placeholders), and after 3 attempts the English chunk is kept (`kept in English (code placeholder)`). New CRITICAL_RULES 13 tells the model to keep placeholder lines.
+  - A chunk that is only placeholders is not sent at all (fewer tokens, shorter runs).
+  - Whole-file check before writing (`code_block_problem`): same fenced blocks as the English — count, fence lines incl. info string (```python), order, identical code. Otherwise `CodeBlockMismatch`: the language is not written, counts as failed, stays in the queue, and the Comments column says `Failed: de (code blocks changed)` (`build_history_comment(failed_reasons=…)`). The reason goes to Comments, not Notes, because every scan rewrites Notes.
+  - Checked on all six local blog checkouts: protect → restore gives back every English `index.md` byte for byte.
+  - Live test, 27 Nov 2026 (local, German only, English from blog.groupdocs.cloud `dee72c63e`): csv-to-jpg retranslated in 273 s, 58,465 tokens, 73 LLM calls. All 14 code blocks identical to the English, 28 fence lines in both (the broken ec990f7b German had 32), code comments English, no markers, no placeholder left, no paragraph kept in English. Not committed to the blog (local mirror only).
+  - Tests: `test_translator_guards.py` (block with blank lines inside CODE_SNIPPET markers, two blocks in a row, Markdown-looking lines and ``` in a string inside code, a code comment that must stay English, a moved fence with the same count, placeholder dropped / moved / glued / translated, retries, `translate_file` writes nothing on a mismatch, the Comments reason).
 - **Git conflict markers committed** (27 Nov 2026): in blog.groupdocs.cloud commit `ec990f7b` (09:16) 4 csv-to-jpg translations (de, id, tr, uk) were committed with `<<<<<<< Updated upstream` / `>>>>>>> Stashed changes`. While the run was translating, the Health and Recovery Agent's fix `4b6eda6a` changed the same files. `git merge --ff-only --autostash` re-applied the agent's files, the re-apply conflicted, git left the markers, the step did not fail, and `git add content/` committed them.
   - All seven translate workflows (`translate-blog-*.yml` and `translate-blogs.yml`) now run `sync_with_remote.py --ref origin/<branch>` instead: it saves the run's added, changed and deleted `content/` files, `git reset --hard`s to the remote, and writes them back. The agent's full retranslation wins; if the English changed meanwhile, the next scan flags the file OUTDATED again. A file whose post has no English `index.md` on the remote any more is not written back (`::warning::`).
   - `commit_translations.py` never commits a file with a `^<<<<<<< ` / `^>>>>>>> ` line: it unstages it with `::error::Not committed - git conflict markers in <file>`, and the other files are committed as usual.
   - Tests: `test_sync_with_remote.py` (real git repos with a bare origin: same file changed on the remote, new file on both sides, EXTRA deletion, post removed on the remote, nothing changed), `test_commit_translations.py` (marker files skipped, look-alikes such as a setext `=======` heading are not markers), `test_workflows.py` (no `--autostash` / `git merge`, order sync → `git add` → commit).
+
+### Added
+- `code_block_report.py` (27 Nov 2026) — read-only report of translations whose code blocks differ from the English (no file, sheet or LLM changes). Categories: `markers`, `structure` (fence lines differ, so the page renders wrongly), `code` (same fences, code differs — mostly translated comments), `legacy` (older translations pasted `{{< gist >}}` code inline; renders fine), `ok`. `--csv` / `--list` give the files. First run on the local checkouts, 27 Nov 2026 (checkouts 0–8 days old):
+
+  | Blog | structure | code | legacy | markers | ok |
+  |---|---|---|---|---|---|
+  | blog.aspose.com | 3,012 files / 202 posts | 3,505 / 246 | 32,747 / 1,663 | 1 | 12,647 |
+  | blog.aspose.cloud | 692 / 48 | 1,662 / 95 | 8,414 / 407 | 0 | 1,828 |
+  | blog.conholdate.com | 391 / 67 | 1,380 / 110 | 5,515 / 370 | 0 | 2,268 |
+  | blog.conholdate.cloud | 0 | 21 / 1 | 0 | 0 | 89 |
+  | blog.groupdocs.cloud | 156 / 25 | 1,013 / 62 | 6,326 / 353 | 0 | 3,017 |
+  | blog.groupdocs.com (report only) | 592 / 40 | 1,173 / 162 | 4,735 / 226 | 0 | 5,673 |
+
+  The report finds the handoff's known cases: csv-to-jpg `structure` in all 18 languages, json-to-html in exactly fa, id and zh-hant. The one `markers` file is blog.aspose.com `note/2022-06-28-convert-onenote-to-pdf-using-java/index.fr.md`: a conflict committed in 2024 whose markers were then translated ("Mis à jour en amont"). `structure` also counts translations that are older than an English rewrite (those are OUTDATED in the queue anyway). Nothing is requeued yet: requeuing is a separate decision.
 
 ### Documented
 - **Scheduled scans start hours late** (found 24 Nov, recorded 26 Nov 2026). GitHub's cron is best-effort. From 18 to 26 Nov the 00:00 UTC scan started at 04:28–07:51 and the 12:00 scan at 19:11–23:33, and the chained translation runs start later by the same amount. Two runs per blog a day still happen, so the workflows are unchanged. The settling-time estimate is corrected from 72–84 h to **72–87 h** (gaps between scans are 8–15 h). RUNBOOK now says to check `gh run list --status in_progress` before a manual scan, not the clock (ORCHESTRATION, RUNBOOK, ARCHITECTURE, both READMEs)

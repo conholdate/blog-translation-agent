@@ -232,6 +232,8 @@ tools/translation_agent/
 ├── build_commit_message.py        # Commit title/body from staged files (Translate / Retranslate / Remove)
 ├── commit_translations.py         # One commit per post, used by the translate workflows; never commits conflict markers
 ├── sync_with_remote.py            # Before committing: reset to the remote, write the run's files back
+├── code_blocks.py                 # Code blocks → ⟦CODE_n⟧ placeholders, restore, whole-file check
+├── code_block_report.py           # Read-only report of translations whose code differs from the English
 ├── utils.py                       # Metrics webhook calls
 ├── config.py                      # All constants and env-var-backed secrets
 └── tests/
@@ -250,7 +252,8 @@ tools/translation_agent/
 
 **ContentTranslatorAgent**
 - Translates Markdown body in chunks
-- Preserves code blocks, Hugo shortcodes, and formatting
+- Never sees code: fenced blocks become `⟦CODE_n⟧` lines (`code_blocks.py`), are put back byte for byte, and the file must have the same code blocks as the English or it is not written
+- Preserves Hugo shortcodes and formatting
 - Retries up to 3 times per chunk with AI validation on failure
 
 **PlatformIdentifierAgent**
@@ -348,4 +351,4 @@ Check Google credentials and sheet permissions.
 Verify GitHub token has correct permissions.
 
 **Code blocks not preserved**
-The agent automatically detects and skips translation validation for code blocks. If issues persist, check Markdown formatting.
+Since 27 Nov 2026 code never goes to the LLM, and a translation whose code blocks differ from the English is not written (comment `Failed: <lang> (code blocks changed)`). Older translations: `python tools/translation_agent/code_block_report.py <blog>/content --list` (read-only) lists them.

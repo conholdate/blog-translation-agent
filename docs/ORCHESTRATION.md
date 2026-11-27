@@ -362,6 +362,34 @@ and `/ko/pdf/` (blog.aspose.com) are 404. On blog.groupdocs.cloud, 26 English po
 older translations (made before the localizer) already link the language home page, so no sweep is needed.
 Bare-domain links (no trailing slash) were not matched at all before and are now localized too.
 
+### Code blocks (since 27 Nov 2026)
+
+`code_blocks.py` keeps fenced code away from the LLM. `translate_file()`:
+
+1. `protect_code_blocks()` replaces every fenced block (``` or ~~~, opening fence to closing fence,
+   CommonMark rules: a line like `print("```")` does not close a block, an unclosed block runs to the
+   end) with one line `⟦CODE_n⟧`. The `<!--[CODE_SNIPPET_START]-->` / `<!--[CODE_SNIPPET_END]-->` /
+   `<!--[COMPLETE_CODE_SNIPPET_START]-->` / `<!--[COMPLETE_CODE_SNIPPET_END]-->` marker lines next to
+   the block go into the placeholder too, including blank lines between marker and fence (10 such
+   marker lines in the English posts of the six blogs, 27 Nov 2026). The placeholder keeps the block's indentation (code in a list item).
+2. The content agent translates the rest as before (paragraph chunks). A chunk that is only
+   placeholders is not sent to the model. Each reply must have every placeholder of its chunk exactly
+   once, in order, on its own line (`placeholders_intact`). Otherwise the chunk is retried with the
+   syntax-fix prompt, and after 3 attempts the English chunk is kept (`kept in English (code
+   placeholder)` on the language line).
+3. Link localization runs, then `restore_code_blocks()` puts every block back byte for byte. So code
+   and its comments stay English, and URLs inside code are not localized.
+4. `code_block_problem()` compares the whole body with the English: same fenced blocks (count, fence
+   lines incl. info string such as ```python, order, identical code), no placeholder left. If not,
+   `CodeBlockMismatch` is raised before anything is written: the language counts as failed, stays
+   in the queue, and the post's comment says `Failed: <lang> (code blocks changed)`. For an OUTDATED
+   or ISSUE row the old file stays as it was.
+
+Why: on 27 Nov 2026 (blog.groupdocs.cloud `ec990f7b`, csv-to-jpg, 14 languages) the model moved a
+closing fence to a blank line inside a code block. The old guard only compared ``` counts per chunk,
+which stayed equal, and code comments were translated. To size older damage, run the read-only
+`code_block_report.py <blog>/content` (results of the first run are in CHANGELOG, 27 Nov 2026).
+
 ### Queue comments
 
 After each post, a comment (result, failed languages, English links kept) is appended to the

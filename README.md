@@ -11,7 +11,7 @@ The agent runs a four-step pipeline:
 | Step | What it does |
 |------|-------------|
 | **1. Scan** | Walks all blog repositories daily and reports to Google Sheets every post with a missing translation (`MISSING`), an unsupported extra file (`EXTRA`), or a translation older than its English `index.md` (`OUTDATED` — the English was committed after it), with a `Notes` column saying why (line 1 is a short headline for the dashboard, e.g. `New Post` or `Updated by Optimizer Agent on 2026-11-16`) |
-| **2. Translate** | Reads the scan results, fills in missing translations and retranslates outdated ones using an LLM — preserving formatting, code blocks, and front matter. New posts always go first. A post is translated only 3 days (72 h) after its last English edit, so errors can be fixed in English first (Urgent rows skip the wait). Internal links point to the language version (`/{lang}/`) only where it exists — translated posts and the home page — so translations never link a 404 |
+| **2. Translate** | Reads the scan results, fills in missing translations and retranslates outdated ones using an LLM — preserving formatting and front matter. Code blocks never go to the LLM: they are swapped for placeholders, put back byte for byte, and checked against the English before a file is written. New posts always go first. A post is translated only 3 days (72 h) after its last English edit, so errors can be fixed in English first (Urgent rows skip the wait). Internal links point to the language version (`/{lang}/`) only where it exists — translated posts and the home page — so translations never link a 404 |
 | **3. Quality Check** | Scores all existing translations for accuracy using a heuristic pass followed by AI analysis |
 | **4. Retranslate** | Re-translates files the AI validator flags `RETRANSLATE` — **not scheduled in any workflow yet** (see [ORCHESTRATION.md](docs/ORCHESTRATION.md#control-flow--step-4-retranslator)) |
 
@@ -49,6 +49,8 @@ blog-translation-agent/
 │   │   ├── build_commit_message.py
 │   │   ├── commit_translations.py  # one commit per post; never commits git conflict markers
 │   │   ├── sync_with_remote.py     # reset to the remote, write the run's files back (before commit)
+│   │   ├── code_blocks.py          # code blocks kept out of the LLM, checked after translation
+│   │   ├── code_block_report.py    # read-only: translations whose code differs from the English
 │   │   ├── git_repo_utils.py
 │   │   ├── io_google_spreadsheet.py
 │   │   ├── utils.py

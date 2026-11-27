@@ -91,7 +91,10 @@ The agent only writes language variants (`index.{lang}.md`) — it never modifie
 | `PROFESSIONALIZE_API_KEY` missing / 401 | Secret not set or expired | Set/rotate the key (§3), re-run. |
 | Google credential error | Service-account key invalid/expired | Rotate `GOOGLE_SERVICE_ACCOUNT_JSON` (§3). |
 | Untranslated / partially-English output | LLM returned source text | Retries (3×) + AI validation already handle most; if persistent, re-run the file via the quality pipeline. |
-| Shortcode / code-fence corruption | LLM altered Hugo syntax | Covered by recent retry hardening; if seen, file an issue with the post slug and re-run. |
+| Shortcode corruption | LLM altered Hugo syntax | Covered by the retry hardening; if seen, file an issue with the post slug and re-run. |
+| Comment `Failed: <lang> (code blocks changed)` / log `CodeBlockMismatch` | A translation's code blocks differ from the English after restoring them (`code_blocks.py`); the file was not written | The language stays queued and is retried on the next run. If it repeats for the same post, check the English for an unusual fence (e.g. a fence inside a code sample) and file an issue. |
+| Language line `kept in English (code placeholder)` | The model kept changing a `⟦CODE_n⟧` placeholder in a paragraph; that paragraph stayed English | Re-queue the language (ISSUE row) if the paragraph matters. |
+| Code blocks broken or translated in existing translations | Translations made before 27 Nov 2026 (the model saw the code) | `python tools/translation_agent/code_block_report.py <blog>/content --list` (read-only) lists them; requeue `structure` files as ISSUE rows. |
 | Sheet API quota / 429 | Rate limit | Re-run later; reduce `limit`. |
 | Metrics not recorded | Metrics endpoint/key issue | Non-blocking by design — fix `METRICS_*`, no pipeline impact. |
 | Scan log: `No git history for … — OUTDATED check skipped` | Blog repo checked out without history | Keep `fetch-depth: 0` in `scan-missing-translations.yml`. Locally expected (the test mirror has no history). |

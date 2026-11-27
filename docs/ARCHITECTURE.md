@@ -48,7 +48,8 @@ One agent. Four pipeline steps. Two implementation directories.
 | Scan helpers | `scan_helpers.py` | Front matter reading (`utf-8-sig`, front matter block only), one-pass `git log` of a blog's content (`last_commits()`), the OUTDATED rule (`outdated_langs()`) and the Notes texts |
 | Orchestrator | `translator.py` — `TranslationOrchestrator` | Coordinates the translation workflow, manages agents and token tracking; translates `MISSING` rows and overwrites files for `OUTDATED` rows; open queue rows only, by Priority (Urgent, High, Normal, Low — defaults MISSING High, OUTDATED Low), then sheet order (FIFO), OUTDATED rows newest post first (`scan_queue.order_rows()`); holds back rows until their Ready After (last English commit + 72 h, `split_settled()` / `scan_queue.is_settled()`; Urgent and ISSUE rows don't wait); also deletes junk files flagged by `EXTRA`-issue rows (`delete_extra_files()`) |
 | Frontmatter Agent | `translator.py` — `FrontmatterTranslatorAgent` | Translates YAML front matter; protects product names, updates URL with lang prefix |
-| Content Agent | `translator.py` — `ContentTranslatorAgent` | Translates Markdown body in chunks; preserves code blocks and shortcodes; 3-retry logic |
+| Content Agent | `translator.py` — `ContentTranslatorAgent` | Translates Markdown body in chunks; never sees code (placeholders); keeps shortcodes; 3-retry logic |
+| Code-block guard | `code_blocks.py` | Before translation each fenced block (with its `CODE_SNIPPET` markers) becomes a `⟦CODE_n⟧` line; every chunk must return its placeholders unchanged; blocks are restored byte for byte; the whole file must have the same fenced blocks as the English or the language is not written (`CodeBlockMismatch`, comment `Failed: <lang> (code blocks changed)`). Since 27 Nov 2026 — see [ORCHESTRATION.md — Code blocks](ORCHESTRATION.md#code-blocks-since-27-nov-2026) |
 | Link Localizer | `link_localizer.py` — `LinkLocalizer` | After translation, rewrites internal links of the same blog (absolute, bare domain, root-relative, `href`; not in code blocks) to `/{lang}/` only when that page exists in the language: a post with `index.{lang}.md` on disk or queued in the run, and always the home page (`https://blog.<domain>` with or without `/`). Sections and tags (404 in other languages) keep the English URL, and a `/{lang}/` the LLM added there is removed. English links kept are reported in the queue comment. See [ORCHESTRATION.md — Internal links](ORCHESTRATION.md#internal-links) |
 | Platform Agent | `translator.py` — `PlatformIdentifierAgent` | Identifies the programming platform (.NET, Java, Python, …) to improve translation context |
 | Sheets I/O | `io_google_spreadsheet.py` | Reads/writes Google Sheets via service account credentials |
@@ -128,6 +129,8 @@ blog-translation-agent/
 │   │   ├── build_commit_message.py         # Descriptive git commit title/body
 │   │   ├── commit_translations.py          # One commit per post (used by translate workflows); never commits conflict markers
 │   │   ├── sync_with_remote.py             # Reset to the remote and write the run's files back (translate workflows)
+│   │   ├── code_blocks.py                  # Code blocks → ⟦CODE_n⟧ placeholders, restore, whole-file check
+│   │   ├── code_block_report.py            # Read-only report: translations whose code differs from the English
 │   │   ├── utils.py                        # Metrics (REST API)
 │   │   ├── config.py                       # All constants + env vars
 │   │   └── tests/

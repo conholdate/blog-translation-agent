@@ -113,7 +113,8 @@ Blog Translation Agent
        starts after 5 h (TRANSLATION_TIME_LIMIT_MIN), so the run still commits before GitHub's
        6 h kill
     2. Checkout target blog repo (read-only except content/)
-    3. Translate English index.md → index.{lang}.md
+    3. Translate English index.md → index.{lang}.md (code blocks never sent to the LLM; the file must
+       have the same code blocks as the English, or it is not written)
     4. Write translated file to blog-checkedout-repo/content/...
     5. Send metrics to Google Sheets
     6. Append a per-post comment (result, failed languages, EN links kept) to the
@@ -164,6 +165,7 @@ Notes:
 ## Safety Rules
 
 - Agents must never modify the English source file (`index.md`) — only language variants (`index.{lang}.md`)
+- Code never goes to the LLM: fenced code blocks (with their `CODE_SNIPPET` markers) are replaced by `⟦CODE_n⟧` placeholders, restored byte for byte, and a translation whose code blocks differ from the English (count, fence lines, order, code) is not written — `tools/translation_agent/code_blocks.py` (since 27 Nov 2026)
 - Never commit git conflict markers: the translate workflows sync with `sync_with_remote.py` (reset to the remote, write the run's files back), not `git merge --autostash`, and `commit_translations.py` unstages any file with a `^<<<<<<< ` / `^>>>>>>> ` line (since 27 Nov 2026)
 - Agents must validate `PROFESSIONALIZE_API_KEY` is present before starting any LLM call
 - Agents must validate Google credentials before accessing any sheet
