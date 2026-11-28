@@ -156,7 +156,7 @@ read-only operation and is encouraged before reporting a task complete.
 
 Notes:
 - **Running** tests is allowed; **modifying** the test files under `tools/*/tests/` needs user approval (see Forbidden Paths).
-- Tests are helper/edge-case level and do not require live credentials.
+- Tests are helper/edge-case level and do not require live credentials. Exception: 5 tests in `tools/translation_agent/tests/test_config.py` (`test_professionalize_base_url_nonempty`, `test_professionalize_llm_model_nonempty`, `test_metrics_webhook_url_team_nonempty`, `test_metrics_token_team_nonempty`, `test_metrics_api_key_nonempty`) check that config values from `.env` / CI secrets are set, so they fail in a checkout without `.env` (e.g. a fresh `git worktree`). Copy `.env` into it before running the suite (found 27 Nov 2026).
 - Translation logs are concise by default (one line per language, a result per post, a run summary — see `tools/translation_agent/run_log.py`). Use `--verbose` or `TRANSLATION_VERBOSE=1` for step-by-step detail; in GitHub Actions the detail is kept in collapsed `::group::` sections.
 - On the maintainer's machine these commands are pre-approved for Claude in `.claude/settings.local.json`, so they run without prompting. `.claude/` is gitignored, so the pre-approval is per-machine and not shared through the repo.
 
